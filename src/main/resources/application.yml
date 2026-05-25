@@ -1,0 +1,25 @@
+server:
+  port: ${PORT:3000}
+
+debug: false
+
+logging:
+  level:
+    root: INFO
+    org.springframework: INFO
+
+spring:
+  application:
+    name: windowsense
+  web:
+    resources:
+      static-locations:
+        - classpath:/static/
+        - file:public/
+
+windowsense:
+  device-id: ${WINDOWSENSE_DEVICE_ID:windowsense-esp32-01}
+  things-board:
+    host: ${THINGSBOARD_HOST:}
+    access-token: ${THINGSBOARD_ACCESS_TOKEN:}
+    sync-enabled: ${THINGSBOARD_SYNC_ENABLED:false}
