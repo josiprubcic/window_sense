@@ -1,42 +1,49 @@
 package com.windowsense.iot;
 
+import com.windowsense.events.StateChangedEvent;
 import com.windowsense.model.WindowSenseState;
-import com.windowsense.store.WindowSenseStore;
+import com.windowsense.service.IotStatusService;
 import jakarta.annotation.PostConstruct;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class ThingsBoardSyncService {
 
-    private final WindowSenseStore store;
+    private final IotStatusService iotStatusService;
     private final ThingsBoardClient thingsBoardClient;
-    private final AtomicBoolean updatingSyncStatus = new AtomicBoolean(false);
 
-    public ThingsBoardSyncService(WindowSenseStore store, ThingsBoardClient thingsBoardClient) {
-        this.store = store;
+    public ThingsBoardSyncService(
+            IotStatusService iotStatusService,
+            ThingsBoardClient thingsBoardClient
+    ) {
+        this.iotStatusService = iotStatusService;
         this.thingsBoardClient = thingsBoardClient;
     }
 
     @PostConstruct
     public void init() {
         Map<String, Object> status = thingsBoardClient.status();
-        store.setThingsBoardStatus(
+        iotStatusService.setThingsBoardStatus(
                 status.get("connection").toString(),
                 blankToNull(status.get("lastSyncAt")),
                 blankToNull(status.get("lastError"))
         );
-        store.subscribe(this::sync);
     }
 
-    private void sync(WindowSenseState state) {
-        if (updatingSyncStatus.get() || !thingsBoardClient.isReady()) {
+    @EventListener
+    public void onStateChanged(StateChangedEvent event) {
+        if ("thingsboard-status".equals(event.reason()) || !thingsBoardClient.isReady()) {
             return;
         }
 
+        sync(event.state());
+    }
+
+    private void sync(WindowSenseState state) {
         CompletableFuture.runAsync(() -> {
             try {
                 thingsBoardClient.sendTelemetry(state);
@@ -48,12 +55,7 @@ public class ThingsBoardSyncService {
     }
 
     private void updateStatus(String connection, String lastSyncAt, String lastError) {
-        updatingSyncStatus.set(true);
-        try {
-            store.setThingsBoardStatus(connection, lastSyncAt, lastError);
-        } finally {
-            updatingSyncStatus.set(false);
-        }
+        iotStatusService.setThingsBoardStatus(connection, lastSyncAt, lastError);
     }
 
     private static String blankToNull(Object value) {

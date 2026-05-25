@@ -9,6 +9,8 @@ logging:
     org.springframework: INFO
 
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: windowsense
   web:

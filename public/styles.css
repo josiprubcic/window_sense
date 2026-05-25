@@ -197,7 +197,7 @@ h2 {
 }
 
 .visual-panel {
-  min-height: 520px;
+  min-height: 0;
   padding: 18px;
 }
 
@@ -221,186 +221,38 @@ h2 {
   color: var(--muted);
 }
 
-.weather-mini {
+.status-grid {
   display: grid;
-  gap: 6px;
-  justify-items: end;
-  color: var(--muted);
-  font-weight: 700;
-  white-space: nowrap;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
 }
 
-.window-scene {
-  position: relative;
-  overflow: hidden;
-  height: 418px;
-  margin-top: 18px;
-  border: 1px solid #cbd8d5;
+.status-item {
+  display: grid;
+  gap: 8px;
+  min-height: 104px;
+  margin: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, #bfe2ee 0%, #dff2f4 52%, #e8ece7 52%, #e8ece7 100%);
+  padding: 16px;
+  background: var(--surface-2);
 }
 
-.sun-disc {
-  position: absolute;
-  top: 34px;
-  right: 62px;
-  width: 82px;
-  height: 82px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #ffe08a 0%, #f7b733 68%, rgba(247, 183, 51, 0.1) 70%);
-  opacity: calc(0.2 + min(var(--blinds-down), 60) / 200);
+.status-item dt {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
-.rain-layer {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.rain-layer.is-active {
-  opacity: 1;
-}
-
-.rain-layer span {
-  position: absolute;
-  top: -40px;
-  width: 2px;
-  height: 96px;
-  background: rgba(37, 99, 235, 0.45);
-  transform: rotate(18deg);
-  animation: rain 900ms linear infinite;
-}
-
-.rain-layer span:nth-child(1) {
-  left: 14%;
-}
-
-.rain-layer span:nth-child(2) {
-  left: 34%;
-  animation-delay: 160ms;
-}
-
-.rain-layer span:nth-child(3) {
-  left: 52%;
-  animation-delay: 280ms;
-}
-
-.rain-layer span:nth-child(4) {
-  left: 72%;
-  animation-delay: 430ms;
-}
-
-.rain-layer span:nth-child(5) {
-  left: 88%;
-  animation-delay: 590ms;
-}
-
-@keyframes rain {
-  to {
-    transform: translateY(520px) rotate(18deg);
-  }
-}
-
-.window-frame {
-  position: absolute;
-  left: 50%;
-  bottom: 60px;
-  width: min(470px, 78%);
-  height: 300px;
-  transform: translateX(-50%);
-  border: 16px solid #f6f8f6;
-  border-bottom-width: 24px;
-  background: #9fd3dd;
-  box-shadow: 0 24px 60px rgba(31, 41, 39, 0.16);
-}
-
-.window-frame::before,
-.window-frame::after {
-  content: "";
-  position: absolute;
-  background: #f6f8f6;
-  z-index: 5;
-}
-
-.window-frame::before {
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 14px;
-  transform: translateX(-50%);
-}
-
-.window-frame::after {
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 12px;
-  transform: translateY(-50%);
-}
-
-.glass {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 50%;
-  background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.08) 42%),
-    rgba(95, 174, 194, 0.46);
-}
-
-.glass--left {
-  left: 0;
-}
-
-.glass--right {
-  right: 0;
-  transform-origin: right center;
-  transform: perspective(720px) rotateY(calc(var(--window-open) * -0.62deg));
-  transition: transform 260ms ease;
-}
-
-.blind-stack {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: calc(var(--blinds-down) * 1%);
-  min-height: 12px;
-  z-index: 6;
-  overflow: hidden;
-  background:
-    repeating-linear-gradient(
-      180deg,
-      #d6c08a 0,
-      #d6c08a 10px,
-      #b99a58 10px,
-      #b99a58 13px
-    );
-  border-bottom: 3px solid #9d7a38;
-  transition: height 260ms ease;
-}
-
-.sill {
-  position: absolute;
-  left: -30px;
-  right: -30px;
-  bottom: -46px;
-  height: 22px;
-  background: #d9dedb;
-  border-radius: 4px;
-}
-
-.room-floor {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 70px;
-  background:
-    linear-gradient(90deg, rgba(31, 41, 39, 0.08) 1px, transparent 1px) 0 0 / 42px 100%,
-    #d8ded9;
+.status-item dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .control-panel {
@@ -635,18 +487,6 @@ input[type="checkbox"] {
     min-height: auto;
   }
 
-  .window-scene {
-    height: 340px;
-  }
-
-  .window-frame {
-    width: 82%;
-    height: 230px;
-    bottom: 52px;
-    border-width: 12px;
-    border-bottom-width: 18px;
-  }
-
   .button-row {
     grid-template-columns: 1fr;
   }
@@ -663,5 +503,9 @@ input[type="checkbox"] {
   .range-row output {
     grid-column: 2;
     grid-row: 1;
+  }
+
+  .status-grid {
+    grid-template-columns: 1fr;
   }
 }

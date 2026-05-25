@@ -15,9 +15,12 @@ const dom = {
   blindsValue: document.querySelector('#blindsValue'),
   blindsDetail: document.querySelector('#blindsDetail'),
   weatherLine: document.querySelector('#weatherLine'),
-  indoorTemp: document.querySelector('#indoorTemp'),
-  outdoorTemp: document.querySelector('#outdoorTemp'),
-  rainLayer: document.querySelector('#rainLayer'),
+  summaryWindowPercent: document.querySelector('#summaryWindowPercent'),
+  summaryWindowOpen: document.querySelector('#summaryWindowOpen'),
+  summaryBlindsPercent: document.querySelector('#summaryBlindsPercent'),
+  summaryBlindsDown: document.querySelector('#summaryBlindsDown'),
+  summaryRain: document.querySelector('#summaryRain'),
+  summaryWind: document.querySelector('#summaryWind'),
   autoModeButton: document.querySelector('#autoModeButton'),
   manualModeButton: document.querySelector('#manualModeButton'),
   windowSlider: document.querySelector('#windowSlider'),
@@ -145,8 +148,9 @@ function syncInputs(state) {
 
 function render(state) {
   currentState = state;
-  document.documentElement.style.setProperty('--window-open', state.actuators.window.openPercent);
-  document.documentElement.style.setProperty('--blinds-down', state.actuators.blinds.positionPercent);
+  const rainProbability = Math.round(state.weather.rainProbability);
+  const rainThreshold = Number(state.automation.thresholds.rainProbabilityClose) || 0;
+  const rainActive = state.sensors.rainDetected || rainProbability >= rainThreshold;
 
   dom.siteArea.textContent = state.site.area;
   dom.siteName.textContent = state.site.name;
@@ -159,8 +163,8 @@ function render(state) {
   dom.iotStatus.textContent = iotConnection.replaceAll('_', ' ');
   setStatusClass(dom.iotStatus, iotConnection);
 
-  dom.rainValue.textContent = state.sensors.rainDetected ? 'Aktivno' : 'Mirno';
-  dom.rainDetail.textContent = `${Math.round(state.sensors.rainIntensity)} intenzitet / ${Math.round(state.weather.rainProbability)}% prognoza`;
+  dom.rainValue.textContent = rainActive ? 'Aktivno' : 'Mirno';
+  dom.rainDetail.textContent = `${Math.round(state.sensors.rainIntensity)} intenzitet / ${rainProbability}% prognoza`;
   dom.lightValue.textContent = formatLux(state.sensors.lightLux);
   dom.lightDetail.textContent = `Prag zasjene ${formatLux(state.automation.thresholds.lightLuxShade)}`;
   dom.windowValue.textContent = formatPercent(state.actuators.window.openPercent);
@@ -168,10 +172,13 @@ function render(state) {
   dom.blindsValue.textContent = formatPercent(state.actuators.blinds.positionPercent);
   dom.blindsDetail.textContent = '0% gore / 100% dolje';
 
-  dom.weatherLine.textContent = `${state.weather.condition} / ${Math.round(state.weather.rainProbability)}% kisa / ${Math.round(state.weather.windKph)} km/h`;
-  dom.indoorTemp.textContent = `Unutra ${Number(state.sensors.indoorTempC).toFixed(1)} C`;
-  dom.outdoorTemp.textContent = `Vani ${Number(state.sensors.outdoorTempC).toFixed(1)} C`;
-  dom.rainLayer.classList.toggle('is-active', state.sensors.rainDetected || state.weather.rainProbability >= 55);
+  dom.weatherLine.textContent = `${state.weather.condition} / ${rainProbability}% rizik kise`;
+  dom.summaryWindowPercent.textContent = formatPercent(state.actuators.window.openPercent);
+  dom.summaryWindowOpen.textContent = state.sensors.windowContactOpen ? 'Da' : 'Ne';
+  dom.summaryBlindsPercent.textContent = formatPercent(state.actuators.blinds.positionPercent);
+  dom.summaryBlindsDown.textContent = state.actuators.blinds.positionPercent > 0 ? 'Da' : 'Ne';
+  dom.summaryRain.textContent = rainActive ? 'Pada' : 'Ne pada';
+  dom.summaryWind.textContent = `${Math.round(state.weather.windKph)} km/h`;
 
   dom.iotPlatform.textContent = state.iot.platform;
   dom.deviceId.textContent = state.site.deviceId;

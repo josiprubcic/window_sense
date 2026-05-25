@@ -24,9 +24,8 @@ public class AutomationService {
                 || state.sensors.rainIntensity > thresholds.rainIntensityClose
                 || state.weather.rainProbability >= thresholds.rainProbabilityClose;
         boolean windRisk = state.weather.windKph >= thresholds.windKphClose;
-        boolean strongSun = state.sensors.lightLux >= thresholds.lightLuxShade
-                && state.sensors.indoorTempC >= thresholds.indoorTempShadeC;
-        boolean lowLight = state.sensors.lightLux <= thresholds.lightLuxRelease;
+        boolean strongSun = state.sensors.lightLux >= thresholds.lightLuxShade;
+        boolean lowLight = state.sensors.lightLux < thresholds.lightLuxShade;
 
         if ((rainRisk || windRisk) && state.actuators.window.openPercent > 0) {
             decisions.add(new Decision(
@@ -44,7 +43,7 @@ public class AutomationService {
                     "blinds",
                     "setPosition",
                     thresholds.blindsShadePosition,
-                    "Visok intenzitet svjetlosti i temperatura zahtijevaju zasjenu."
+                    "Visok intenzitet svjetlosti zahtijeva zasjenu."
             ));
         }
 
@@ -53,7 +52,7 @@ public class AutomationService {
                     "blinds",
                     "setPosition",
                     thresholds.blindsReleasePosition,
-                    "Svjetlost je niska, rolete se vracaju u otvoreniji polozaj."
+                    "Svjetlost je ispod praga zasjene, rolete se vracaju u otvoreniji polozaj."
             ));
         }
 

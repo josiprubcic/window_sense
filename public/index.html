@@ -49,27 +49,36 @@
             <div class="visual-panel__header">
               <div>
                 <h2>Zona: <span id="siteName">WindowSense Lab</span></h2>
-                <p id="weatherLine">--</p>
-              </div>
-              <div class="weather-mini">
-                <span id="indoorTemp">--</span>
-                <span id="outdoorTemp">--</span>
+                <p id="weatherLine">Sažetak trenutnog stanja</p>
               </div>
             </div>
 
-            <div class="window-scene" aria-label="Vizualni prikaz prozora i roleta">
-              <div class="sun-disc"></div>
-              <div class="rain-layer" id="rainLayer">
-                <span></span><span></span><span></span><span></span><span></span>
+            <dl class="status-grid" aria-label="Sažetak stanja prozora, zastora i vremena">
+              <div class="status-item">
+                <dt>Otvorenost prozora</dt>
+                <dd id="summaryWindowPercent">--</dd>
               </div>
-              <div class="window-frame">
-                <div class="blind-stack" id="blindStack"></div>
-                <div class="glass glass--left"></div>
-                <div class="glass glass--right" id="windowPane"></div>
-                <div class="sill"></div>
+              <div class="status-item">
+                <dt>Prozor otvoren</dt>
+                <dd id="summaryWindowOpen">--</dd>
               </div>
-              <div class="room-floor"></div>
-            </div>
+              <div class="status-item">
+                <dt>Spuštenost zastora</dt>
+                <dd id="summaryBlindsPercent">--</dd>
+              </div>
+              <div class="status-item">
+                <dt>Zastor spušten</dt>
+                <dd id="summaryBlindsDown">--</dd>
+              </div>
+              <div class="status-item">
+                <dt>Kiša</dt>
+                <dd id="summaryRain">--</dd>
+              </div>
+              <div class="status-item">
+                <dt>Vjetar</dt>
+                <dd id="summaryWind">--</dd>
+              </div>
+            </dl>
           </article>
 
           <aside class="control-panel">
