@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="hr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WindowSense</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>WindowSense</h1>
+          <p id="siteArea">Pametna zgrada</p>
+        </div>
+        <div class="topbar__meta">
+          <span id="automationMode" class="status-pill">AUTO</span>
+          <span id="iotStatus" class="status-pill status-pill--neutral">ThingsBoard</span>
+          <span id="lastUpdated" class="timestamp">--</span>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="overview-grid" aria-label="Stanje sustava">
+          <article class="metric metric--rain">
+            <span class="metric__label">Kisa</span>
+            <strong id="rainValue">--</strong>
+            <small id="rainDetail">--</small>
+          </article>
+          <article class="metric metric--light">
+            <span class="metric__label">Svjetlost</span>
+            <strong id="lightValue">--</strong>
+            <small id="lightDetail">--</small>
+          </article>
+          <article class="metric metric--window">
+            <span class="metric__label">Prozor</span>
+            <strong id="windowValue">--</strong>
+            <small id="windowDetail">--</small>
+          </article>
+          <article class="metric metric--blinds">
+            <span class="metric__label">Rolete</span>
+            <strong id="blindsValue">--</strong>
+            <small id="blindsDetail">--</small>
+          </article>
+        </section>
+
+        <section class="workspace">
+          <article class="visual-panel">
+            <div class="visual-panel__header">
+              <div>
+                <h2>Zona: <span id="siteName">WindowSense Lab</span></h2>
+                <p id="weatherLine">--</p>
+              </div>
+              <div class="weather-mini">
+                <span id="indoorTemp">--</span>
+                <span id="outdoorTemp">--</span>
+              </div>
+            </div>
+
+            <div class="window-scene" aria-label="Vizualni prikaz prozora i roleta">
+              <div class="sun-disc"></div>
+              <div class="rain-layer" id="rainLayer">
+                <span></span><span></span><span></span><span></span><span></span>
+              </div>
+              <div class="window-frame">
+                <div class="blind-stack" id="blindStack"></div>
+                <div class="glass glass--left"></div>
+                <div class="glass glass--right" id="windowPane"></div>
+                <div class="sill"></div>
+              </div>
+              <div class="room-floor"></div>
+            </div>
+          </article>
+
+          <aside class="control-panel">
+            <section class="panel-section">
+              <div class="panel-title">
+                <h2>Upravljanje</h2>
+                <div class="segmented" role="group" aria-label="Nacin rada">
+                  <button id="autoModeButton" data-mode="auto" class="is-active">Auto</button>
+                  <button id="manualModeButton" data-mode="manual">Manual</button>
+                </div>
+              </div>
+
+              <div class="button-row">
+                <button data-target="window" data-action="open">Otvori prozor</button>
+                <button data-target="window" data-action="close">Zatvori prozor</button>
+                <button data-target="window" data-action="stop">Stop</button>
+              </div>
+              <label class="range-row">
+                <span>Polozaj prozora</span>
+                <input id="windowSlider" type="range" min="0" max="100" step="5">
+                <output id="windowSliderValue">--</output>
+              </label>
+
+              <div class="button-row">
+                <button data-target="blinds" data-action="open">Podigni</button>
+                <button data-target="blinds" data-action="setPosition" data-position="85">Zasjeni</button>
+                <button data-target="blinds" data-action="close">Spusti</button>
+              </div>
+              <label class="range-row">
+                <span>Polozaj roleta</span>
+                <input id="blindsSlider" type="range" min="0" max="100" step="5">
+                <output id="blindsSliderValue">--</output>
+              </label>
+            </section>
+
+            <section class="panel-section">
+              <div class="panel-title">
+                <h2>Simulacija</h2>
+                <button id="applyTelemetryButton" class="button-secondary">Primijeni</button>
+              </div>
+              <label class="toggle-row">
+                <span>Senzor kise</span>
+                <input id="rainToggle" type="checkbox">
+              </label>
+              <label class="range-row">
+                <span>Lux</span>
+                <input id="luxInput" type="range" min="0" max="100000" step="1000">
+                <output id="luxInputValue">--</output>
+              </label>
+              <label class="range-row">
+                <span>Rizik kise</span>
+                <input id="rainProbabilityInput" type="range" min="0" max="100" step="1">
+                <output id="rainProbabilityValue">--</output>
+              </label>
+              <label class="range-row">
+                <span>Vjetar</span>
+                <input id="windInput" type="range" min="0" max="100" step="1">
+                <output id="windInputValue">--</output>
+              </label>
+            </section>
+          </aside>
+        </section>
+
+        <section class="lower-grid">
+          <article class="panel-section automation-panel">
+            <div class="panel-title">
+              <h2>Pravila</h2>
+              <button id="saveThresholdsButton" class="button-secondary">Spremi</button>
+            </div>
+            <div class="threshold-grid">
+              <label>
+                <span>Rizik kise za zatvaranje</span>
+                <input id="thresholdRain" type="number" min="0" max="100" step="1">
+              </label>
+              <label>
+                <span>Lux za zasjenu</span>
+                <input id="thresholdLux" type="number" min="0" max="120000" step="1000">
+              </label>
+              <label>
+                <span>Temp. za zasjenu</span>
+                <input id="thresholdTemp" type="number" min="-20" max="60" step="0.5">
+              </label>
+              <label>
+                <span>Vjetar za zatvaranje</span>
+                <input id="thresholdWind" type="number" min="0" max="160" step="1">
+              </label>
+            </div>
+          </article>
+
+          <article class="panel-section iot-panel">
+            <h2>IoT veza</h2>
+            <dl>
+              <div>
+                <dt>Platforma</dt>
+                <dd id="iotPlatform">ThingsBoard</dd>
+              </div>
+              <div>
+                <dt>Uredjaj</dt>
+                <dd id="deviceId">--</dd>
+              </div>
+              <div>
+                <dt>Zadnji sync</dt>
+                <dd id="lastSync">--</dd>
+              </div>
+              <div>
+                <dt>Greska</dt>
+                <dd id="iotError">--</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="panel-section events-panel">
+            <h2>Dogadjaji</h2>
+            <ol id="eventList" class="event-list"></ol>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
