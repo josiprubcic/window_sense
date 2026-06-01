@@ -4,6 +4,7 @@ import com.windowsense.config.WindowSenseProperties;
 import com.windowsense.model.AckRequest;
 import com.windowsense.model.CommandRequest;
 import com.windowsense.model.TelemetryResult;
+import com.windowsense.model.ThresholdUpdateResult;
 import com.windowsense.model.WindowSenseState;
 import com.windowsense.repository.WindowSenseStateRepository;
 import com.windowsense.service.CommandService;
@@ -224,7 +225,7 @@ public class WindowSenseController {
                     )
             )
     )
-    public ResponseEntity<TelemetryResult> thresholds(@RequestBody Map<String, Object> payload) {
+    public ResponseEntity<ThresholdUpdateResult> thresholds(@RequestBody Map<String, Object> payload) {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(thresholdService.updateThresholds(payload));
     }
 

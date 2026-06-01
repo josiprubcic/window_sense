@@ -2,7 +2,7 @@ package com.windowsense.service;
 
 import com.windowsense.automation.AutomationService;
 import com.windowsense.model.Decision;
-import com.windowsense.model.TelemetryResult;
+import com.windowsense.model.ThresholdUpdateResult;
 import com.windowsense.model.WindowSenseState;
 import com.windowsense.repository.WindowSenseStateRepository;
 import org.springframework.stereotype.Service;
@@ -33,8 +33,8 @@ public class ThresholdService {
         this.statePublisher = statePublisher;
     }
 
-    public TelemetryResult updateThresholds(Map<String, Object> payload) {
-        TelemetryResult result = repository.withState(state -> {
+    public ThresholdUpdateResult updateThresholds(Map<String, Object> payload) {
+        ThresholdUpdateResult result = repository.withState(state -> {
             WindowSenseState.Thresholds thresholds = state.automation.thresholds;
             thresholds.rainIntensityClose = PayloadValues.threshold(
                     payload,
@@ -86,10 +86,10 @@ public class ThresholdService {
                     "Pravila automatizacije su promijenjena.");
             List<Decision> decisions = automationService.evaluate(state);
             commandService.applyAutomationDecisions(state, decisions);
-            return new TelemetryResult(state, decisions);
+            return new ThresholdUpdateResult(state.automation.thresholds, decisions, state.updatedAt);
         });
 
-        statePublisher.publish(result.state(), "thresholds");
+        statePublisher.publish(repository.getState(), "thresholds");
         return result;
     }
 

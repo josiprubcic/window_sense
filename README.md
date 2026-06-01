@@ -38,3 +38,26 @@ export THINGSBOARD_SYNC_ENABLED=true
 export WINDOWSENSE_DEVICE_ID=windowsense-esp32-01
 mvn spring-boot:run
 ```
+
+### OIDC login
+
+OIDC je opcionalan za lokalni razvoj. Kada je ukljucen, web aplikacija i `/api/**`
+endpointi traze login, osim `/api/health`, `/api/device/**`, Swagger UI-ja i
+OpenAPI specifikacije.
+
+U OIDC provideru dodajte redirect URI:
+
+```text
+http://localhost:3000/login/oauth2/code/windowsense
+```
+
+Primjer pokretanja:
+
+```bash
+export OIDC_ENABLED=true
+export OIDC_ISSUER_URI=https://issuer.example.com/
+export OIDC_CLIENT_ID=windowsense
+export OIDC_CLIENT_SECRET=client-secret
+export OIDC_SCOPES=openid,profile,email
+mvn spring-boot:run
+```

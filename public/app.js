@@ -45,7 +45,10 @@ const dom = {
   lastSync: document.querySelector('#lastSync'),
   iotError: document.querySelector('#iotError'),
   eventList: document.querySelector('#eventList'),
-  toast: document.querySelector('#toast')
+  toast: document.querySelector('#toast'),
+  loginLink: document.querySelector('#loginLink'),
+  userName: document.querySelector('#userName'),
+  logoutLink: document.querySelector('#logoutLink')
 };
 
 let currentState = null;
@@ -81,6 +84,25 @@ function showToast(message) {
   dom.toast.classList.add('is-visible');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => dom.toast.classList.remove('is-visible'), 2600);
+}
+
+function setVisible(element, visible) {
+  element.hidden = !visible;
+  element.classList.toggle('is-hidden', !visible);
+}
+
+function renderUser(user) {
+  if (!user.authenticated) {
+    setVisible(dom.loginLink, user.oidcEnabled);
+    setVisible(dom.userName, false);
+    setVisible(dom.logoutLink, false);
+    return;
+  }
+
+  setVisible(dom.loginLink, false);
+  dom.userName.textContent = user.email || user.name;
+  setVisible(dom.userName, true);
+  setVisible(dom.logoutLink, true);
 }
 
 async function api(path, options = {}) {
@@ -298,6 +320,12 @@ function startStream() {
 async function boot() {
   bindControls();
   try {
+    const user = await api('/api/me');
+    renderUser(user);
+    if (user.oidcEnabled && !user.authenticated) {
+      return;
+    }
+
     render(await api('/api/state'));
     startStream();
   } catch (error) {

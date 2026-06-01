@@ -149,4 +149,24 @@ class WindowSenseControllerTest {
                 .andExpect(jsonPath("$.commands[0].action").value("setPosition"))
                 .andExpect(jsonPath("$.commands[0].positionPercent").value(20));
     }
+
+    @Test
+    void thresholdsEndpointReturnsCompactResponse() throws Exception {
+        mockMvc.perform(post("/api/automation/thresholds")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "rainProbabilityClose": 45,
+                                  "lightLuxShade": 60000
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.thresholds.rainProbabilityClose").value(45))
+                .andExpect(jsonPath("$.thresholds.lightLuxShade").value(60000))
+                .andExpect(jsonPath("$.decisions").isArray())
+                .andExpect(jsonPath("$.updatedAt").exists())
+                .andExpect(jsonPath("$.state").doesNotExist())
+                .andExpect(jsonPath("$.commandQueue").doesNotExist())
+                .andExpect(jsonPath("$.events").doesNotExist());
+    }
 }

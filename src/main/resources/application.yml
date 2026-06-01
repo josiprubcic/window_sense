@@ -21,6 +21,13 @@ spring:
 
 windowsense:
   device-id: ${WINDOWSENSE_DEVICE_ID:windowsense-esp32-01}
+  security:
+    oidc:
+      enabled: ${OIDC_ENABLED:false}
+      issuer-uri: ${OIDC_ISSUER_URI:}
+      client-id: ${OIDC_CLIENT_ID:}
+      client-secret: ${OIDC_CLIENT_SECRET:}
+      scopes: ${OIDC_SCOPES:openid,profile,email}
   things-board:
     host: ${THINGSBOARD_HOST:}
     access-token: ${THINGSBOARD_ACCESS_TOKEN:}
