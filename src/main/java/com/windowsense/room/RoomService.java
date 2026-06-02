@@ -11,6 +11,7 @@ import com.windowsense.room.dto.RoomResponse;
 import com.windowsense.room.dto.UpdateRoomRequest;
 import com.windowsense.thingsboard.ProvisionedRoomDevice;
 import com.windowsense.thingsboard.ThingsBoardProvisioningService;
+import com.windowsense.thingsboard.VirtualRoomDeprovisioningRequest;
 import com.windowsense.thingsboard.VirtualRoomProvisioningRequest;
 import com.windowsense.user.AppUser;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,8 @@ public class RoomService {
 
     private static final String DEFAULT_HOME_NAME = "Default Home";
     private static final String PENDING_THINGSBOARD_ID = "pending-thingsboard-provisioning";
+    private static final String MOCK_THINGSBOARD_ASSET_PREFIX = "tb-asset-";
+    private static final String MOCK_THINGSBOARD_DEVICE_PREFIX = "tb-device-";
 
     private final CurrentUserService currentUserService;
     private final HomeRepository homeRepository;
@@ -105,9 +108,14 @@ public class RoomService {
         Room room = findOwnedRoom(roomId, user);
         room.getDevices().stream()
                 .findFirst()
-                .ifPresent(device -> thingsBoardProvisioningService.markRoomDeviceDeleted(
-                        room.getTbAssetId(),
-                        device.getTbDeviceId()
+                .filter(device -> shouldDeprovision(room.getTbAssetId(), device.getTbDeviceId()))
+                .ifPresent(device -> thingsBoardProvisioningService.deprovisionVirtualRoom(
+                        new VirtualRoomDeprovisioningRequest(
+                                room.getId(),
+                                room.getName(),
+                                room.getTbAssetId(),
+                                device.getTbDeviceId()
+                        )
                 ));
         roomRepository.delete(room);
     }
@@ -120,5 +128,16 @@ public class RoomService {
     private Room findOwnedRoom(UUID roomId, AppUser user) {
         return roomRepository.findByIdAndHomeAppUserId(roomId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Soba nije pronadjena."));
+    }
+
+    private boolean shouldDeprovision(String tbAssetId, String tbDeviceId) {
+        return isRealThingsBoardId(tbAssetId, MOCK_THINGSBOARD_ASSET_PREFIX)
+                && isRealThingsBoardId(tbDeviceId, MOCK_THINGSBOARD_DEVICE_PREFIX);
+    }
+
+    private boolean isRealThingsBoardId(String value, String mockPrefix) {
+        return value != null && !value.isBlank()
+                && !PENDING_THINGSBOARD_ID.equals(value)
+                && !value.startsWith(mockPrefix);
     }
 }

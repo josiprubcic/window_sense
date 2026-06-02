@@ -42,6 +42,7 @@ public class WindowSenseProperties {
         private boolean syncEnabled = false;
         private boolean provisioningEnabled = false;
         private ProvisioningAuthMode provisioningAuthMode = ProvisioningAuthMode.PASSWORD;
+        private ThingsBoardDeleteMode deleteMode = ThingsBoardDeleteMode.SOFT;
         private String username = "";
         private String password = "";
         private String jwtToken = "";
@@ -85,6 +86,14 @@ public class WindowSenseProperties {
 
         public void setProvisioningAuthMode(ProvisioningAuthMode provisioningAuthMode) {
             this.provisioningAuthMode = provisioningAuthMode == null ? ProvisioningAuthMode.PASSWORD : provisioningAuthMode;
+        }
+
+        public ThingsBoardDeleteMode getDeleteMode() {
+            return deleteMode;
+        }
+
+        public void setDeleteMode(ThingsBoardDeleteMode deleteMode) {
+            this.deleteMode = deleteMode == null ? ThingsBoardDeleteMode.SOFT : deleteMode;
         }
 
         public String getUsername() {
@@ -136,6 +145,11 @@ public class WindowSenseProperties {
         PASSWORD,
         JWT,
         API_KEY
+    }
+
+    public enum ThingsBoardDeleteMode {
+        SOFT,
+        HARD
     }
 
     public static class Security {

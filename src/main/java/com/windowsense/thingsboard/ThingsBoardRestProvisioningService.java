@@ -3,6 +3,7 @@ package com.windowsense.thingsboard;
 import com.windowsense.common.ThingsBoardProvisioningException;
 import com.windowsense.config.WindowSenseProperties;
 import com.windowsense.config.WindowSenseProperties.ProvisioningAuthMode;
+import com.windowsense.config.WindowSenseProperties.ThingsBoardDeleteMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,8 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 
 import java.util.Map;
+import java.util.function.Supplier;
 
 @Service
 @ConditionalOnProperty(prefix = "windowsense.things-board", name = "provisioning-enabled", havingValue = "true")
@@ -47,19 +50,19 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
             String tbAssetName = "WindowSense Room - " + request.roomName() + " [" + suffix + "]";
             String tbDeviceName = request.deviceName() + " [" + suffix + "]";
 
-            String assetId = createAsset(authorization, tbAssetName, request.roomName());
-            String deviceId = createDevice(authorization, tbDeviceName, request.deviceName());
-            createRelation(authorization, assetId, deviceId);
-            saveDeviceAttributes(authorization, deviceId, request);
+            String assetId = provisioningStep("create asset", () -> createAsset(authorization, tbAssetName, request.roomName()));
+            String deviceId = provisioningStep("create device", () -> createDevice(authorization, tbDeviceName, request.deviceName()));
+            provisioningStep("create relation", () -> {
+                createRelation(authorization, assetId, deviceId);
+                return null;
+            });
+            provisioningStep("save device attributes", () -> {
+                saveDeviceAttributes(authorization, deviceId, request);
+                return null;
+            });
 
             // TODO: Persist ThingsBoard device credentials only after encrypted storage is added.
             return new ProvisionedRoomDevice(assetId, deviceId);
-        } catch (HttpClientErrorException.Unauthorized error) {
-            log.warn("ThingsBoard provisioning failed with HTTP 401.");
-            if (properties.getProvisioningAuthMode() == ProvisioningAuthMode.JWT) {
-                throw new ThingsBoardProvisioningException("ThingsBoard JWT token je istekao ili nije valjan. Obnovite THINGSBOARD_JWT_TOKEN.", error);
-            }
-            throw new ThingsBoardProvisioningException("ThingsBoard provisioning autentifikacija nije uspjela.", error);
         } catch (RestClientException | IllegalArgumentException error) {
             log.warn("ThingsBoard provisioning failed: {}", error.getClass().getSimpleName());
             throw new ThingsBoardProvisioningException("ThingsBoard provisioning nije uspio.", error);
@@ -67,23 +70,45 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
     }
 
     @Override
-    public void markRoomDeviceDeleted(String tbAssetId, String tbDeviceId) {
+    public void deprovisionVirtualRoom(VirtualRoomDeprovisioningRequest request) {
         if (!properties.isProvisioningReady()) {
-            return;
+            throw new ThingsBoardProvisioningException("ThingsBoard provisioning nije ispravno konfiguriran.");
         }
 
         try {
             String authorization = authorizationHeader();
-            Map<String, Object> attributes = Map.of(
-                    "active", false,
-                    "deletedFromApp", true
-            );
-            saveAttributes(authorization, "ASSET", tbAssetId, "SERVER_SCOPE", attributes);
-            saveAttributes(authorization, "DEVICE", tbDeviceId, "SERVER_SCOPE", attributes);
-            saveAttributes(authorization, "DEVICE", tbDeviceId, "SHARED_SCOPE", attributes);
+            if (properties.getDeleteMode() == ThingsBoardDeleteMode.HARD) {
+                hardDeleteRoom(authorization, request);
+                return;
+            }
+
+            softDeleteRoom(authorization, request);
+        } catch (HttpClientErrorException.Unauthorized error) {
+            log.warn("ThingsBoard deprovisioning failed with HTTP 401.");
+            if (properties.getProvisioningAuthMode() == ProvisioningAuthMode.JWT) {
+                throw new ThingsBoardProvisioningException("ThingsBoard JWT token je istekao ili nije valjan. Obnovite THINGSBOARD_JWT_TOKEN.", error);
+            }
+            throw new ThingsBoardProvisioningException("ThingsBoard deprovisioning autentifikacija nije uspjela.", error);
         } catch (RestClientException | IllegalArgumentException error) {
-            log.warn("ThingsBoard soft delete marker failed for asset {} and device {}: {}", tbAssetId, tbDeviceId, error.getClass().getSimpleName());
+            log.warn("ThingsBoard deprovisioning failed for room {}: {}", request.roomId(), error.getClass().getSimpleName());
+            throw new ThingsBoardProvisioningException("ThingsBoard deprovisioning nije uspio.", error);
         }
+    }
+
+    private void softDeleteRoom(String authorization, VirtualRoomDeprovisioningRequest request) {
+        Map<String, Object> attributes = Map.of(
+                "active", false,
+                "deletedFromApp", true
+        );
+        deprovisioningStep("mark asset deleted", () -> saveAttributes(authorization, "ASSET", request.tbAssetId(), "SERVER_SCOPE", attributes));
+        deprovisioningStep("mark device deleted in server scope", () -> saveAttributes(authorization, "DEVICE", request.tbDeviceId(), "SERVER_SCOPE", attributes));
+        deprovisioningStep("mark device deleted in shared scope", () -> saveAttributes(authorization, "DEVICE", request.tbDeviceId(), "SHARED_SCOPE", attributes));
+    }
+
+    private void hardDeleteRoom(String authorization, VirtualRoomDeprovisioningRequest request) {
+        deleteRelationBestEffort(authorization, request);
+        deprovisioningStep("delete device", () -> deleteIfExists(authorization, "/api/device/" + request.tbDeviceId()));
+        deprovisioningStep("delete asset", () -> deleteIfExists(authorization, "/api/asset/" + request.tbAssetId()));
     }
 
     private String authorizationHeader() {
@@ -110,6 +135,39 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
             throw new IllegalArgumentException("ThingsBoard login response ne sadrzi token.");
         }
         return token.toString();
+    }
+
+    private <T> T provisioningStep(String stepName, Supplier<T> action) {
+        try {
+            return action.get();
+        } catch (HttpClientErrorException.Unauthorized error) {
+            log.warn("ThingsBoard provisioning failed during {}: HTTP 401.", stepName);
+            if (properties.getProvisioningAuthMode() == ProvisioningAuthMode.JWT) {
+                throw new ThingsBoardProvisioningException("ThingsBoard JWT token je istekao ili nije valjan. Obnovite THINGSBOARD_JWT_TOKEN.", error);
+            }
+            throw new ThingsBoardProvisioningException("ThingsBoard provisioning autentifikacija nije uspjela kod koraka: " + stepName + ".", error);
+        } catch (HttpClientErrorException.Forbidden error) {
+            log.warn("ThingsBoard provisioning failed during {}: HTTP 403.", stepName);
+            throw new ThingsBoardProvisioningException("ThingsBoard provisioning nema dozvolu za korak: " + stepName + ".", error);
+        }
+    }
+
+    private void deprovisioningStep(String stepName, Runnable action) {
+        try {
+            action.run();
+        } catch (HttpClientErrorException.Unauthorized error) {
+            log.warn("ThingsBoard deprovisioning failed during {}: HTTP 401.", stepName);
+            if (properties.getProvisioningAuthMode() == ProvisioningAuthMode.JWT) {
+                throw new ThingsBoardProvisioningException("ThingsBoard JWT token je istekao ili nije valjan. Obnovite THINGSBOARD_JWT_TOKEN.", error);
+            }
+            throw new ThingsBoardProvisioningException("ThingsBoard deprovisioning autentifikacija nije uspjela kod koraka: " + stepName + ".", error);
+        } catch (HttpClientErrorException.Forbidden error) {
+            log.warn("ThingsBoard deprovisioning failed during {}: HTTP 403.", stepName);
+            throw new ThingsBoardProvisioningException("ThingsBoard deprovisioning nema dozvolu za korak: " + stepName + ".", error);
+        } catch (RestClientException | IllegalArgumentException error) {
+            log.warn("ThingsBoard deprovisioning failed during {}: {}", stepName, error.getClass().getSimpleName());
+            throw new ThingsBoardProvisioningException("ThingsBoard deprovisioning nije uspio kod koraka: " + stepName + ".", error);
+        }
     }
 
     private String createAsset(String authorization, String name, String label) {
@@ -189,6 +247,36 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
                 .body(attributes)
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    private void deleteIfExists(String authorization, String pathAndQuery) {
+        try {
+            restClient.delete()
+                    .uri(properties.getHost() + pathAndQuery)
+                    .header(AUTH_HEADER, authorization)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException.NotFound ignored) {
+            log.debug("ThingsBoard entity already absent during hard delete.");
+        }
+    }
+
+    private void deleteRelationBestEffort(String authorization, VirtualRoomDeprovisioningRequest request) {
+        try {
+            deleteIfExists(
+                    authorization,
+                    "/api/relation?fromId=" + request.tbAssetId()
+                            + "&fromType=ASSET"
+                            + "&relationType=Contains"
+                            + "&relationTypeGroup=COMMON"
+                            + "&toId=" + request.tbDeviceId()
+                            + "&toType=DEVICE"
+            );
+        } catch (HttpServerErrorException error) {
+            log.warn("ThingsBoard relation delete returned HTTP {} for room {}; continuing with hard delete of device and asset.",
+                    error.getStatusCode().value(),
+                    request.roomId());
+        }
     }
 
     private static String entityId(Map<String, Object> response, String entityName) {

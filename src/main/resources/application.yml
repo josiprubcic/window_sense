@@ -36,6 +36,7 @@ windowsense:
     sync-enabled: ${THINGSBOARD_SYNC_ENABLED:false}
     provisioning-enabled: ${THINGSBOARD_PROVISIONING_ENABLED:false}
     provisioning-auth-mode: ${THINGSBOARD_PROVISIONING_AUTH_MODE:password}
+    delete-mode: ${THINGSBOARD_DELETE_MODE:soft}
     username: ${THINGSBOARD_USERNAME:}
     password: ${THINGSBOARD_PASSWORD:}
     jwt-token: ${THINGSBOARD_JWT_TOKEN:}

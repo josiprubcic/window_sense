@@ -3,7 +3,9 @@ package com.windowsense;
 import com.windowsense.common.ThingsBoardProvisioningException;
 import com.windowsense.config.WindowSenseProperties;
 import com.windowsense.config.WindowSenseProperties.ProvisioningAuthMode;
+import com.windowsense.config.WindowSenseProperties.ThingsBoardDeleteMode;
 import com.windowsense.thingsboard.ThingsBoardRestProvisioningService;
+import com.windowsense.thingsboard.VirtualRoomDeprovisioningRequest;
 import com.windowsense.thingsboard.VirtualRoomProvisioningRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -97,6 +99,107 @@ class ThingsBoardRestProvisioningServiceTest {
         context.server.verify();
     }
 
+    @Test
+    void deprovisionVirtualRoomSetsSoftDeleteAttributes() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+
+        expectPost(context.server, HOST + "/api/plugins/telemetry/ASSET/asset-id/attributes/SERVER_SCOPE", "ApiKey provisioning-api-key", "");
+        expectPost(context.server, HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SERVER_SCOPE", "ApiKey provisioning-api-key", "");
+        expectPost(context.server, HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SHARED_SCOPE", "ApiKey provisioning-api-key", "");
+
+        context.service.deprovisionVirtualRoom(new VirtualRoomDeprovisioningRequest(
+                ROOM_ID,
+                "Kuhinja",
+                "asset-id",
+                "device-id"
+        ));
+
+        context.server.verify();
+    }
+
+    @Test
+    void deprovisionVirtualRoomReportsFailure() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+
+        context.server.expect(once(), requestTo(HOST + "/api/plugins/telemetry/ASSET/asset-id/attributes/SERVER_SCOPE"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Authorization", "ApiKey provisioning-api-key"))
+                .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+
+        assertThatThrownBy(() -> context.service.deprovisionVirtualRoom(new VirtualRoomDeprovisioningRequest(
+                ROOM_ID,
+                "Kuhinja",
+                "asset-id",
+                "device-id"
+        )))
+                .isInstanceOf(ThingsBoardProvisioningException.class)
+                .hasMessage("ThingsBoard deprovisioning nije uspio kod koraka: mark asset deleted.");
+
+        context.server.verify();
+    }
+
+    @Test
+    void hardDeleteRemovesRelationDeviceAndAsset() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+        context.properties.getThingsBoard().setDeleteMode(ThingsBoardDeleteMode.HARD);
+
+        expectDelete(context.server, relationDeleteUri(), "ApiKey provisioning-api-key", HttpStatus.OK);
+        expectDelete(context.server, HOST + "/api/device/device-id", "ApiKey provisioning-api-key", HttpStatus.OK);
+        expectDelete(context.server, HOST + "/api/asset/asset-id", "ApiKey provisioning-api-key", HttpStatus.OK);
+
+        context.service.deprovisionVirtualRoom(new VirtualRoomDeprovisioningRequest(
+                ROOM_ID,
+                "Kuhinja",
+                "asset-id",
+                "device-id"
+        ));
+
+        context.server.verify();
+    }
+
+    @Test
+    void hardDeleteTreatsNotFoundAsAlreadyDeleted() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+        context.properties.getThingsBoard().setDeleteMode(ThingsBoardDeleteMode.HARD);
+
+        expectDelete(context.server, relationDeleteUri(), "ApiKey provisioning-api-key", HttpStatus.NOT_FOUND);
+        expectDelete(context.server, HOST + "/api/device/device-id", "ApiKey provisioning-api-key", HttpStatus.NOT_FOUND);
+        expectDelete(context.server, HOST + "/api/asset/asset-id", "ApiKey provisioning-api-key", HttpStatus.NOT_FOUND);
+
+        context.service.deprovisionVirtualRoom(new VirtualRoomDeprovisioningRequest(
+                ROOM_ID,
+                "Kuhinja",
+                "asset-id",
+                "device-id"
+        ));
+
+        context.server.verify();
+    }
+
+    @Test
+    void hardDeleteContinuesWhenRelationDeleteReturnsInternalServerError() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+        context.properties.getThingsBoard().setDeleteMode(ThingsBoardDeleteMode.HARD);
+
+        expectDelete(context.server, relationDeleteUri(), "ApiKey provisioning-api-key", HttpStatus.INTERNAL_SERVER_ERROR);
+        expectDelete(context.server, HOST + "/api/device/device-id", "ApiKey provisioning-api-key", HttpStatus.OK);
+        expectDelete(context.server, HOST + "/api/asset/asset-id", "ApiKey provisioning-api-key", HttpStatus.OK);
+
+        context.service.deprovisionVirtualRoom(new VirtualRoomDeprovisioningRequest(
+                ROOM_ID,
+                "Kuhinja",
+                "asset-id",
+                "device-id"
+        ));
+
+        context.server.verify();
+    }
+
     private static TestContext context(ProvisioningAuthMode authMode) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -148,6 +251,17 @@ class ThingsBoardRestProvisioningServiceTest {
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("X-Authorization", authorization))
                 .andRespond(withSuccess(responseBody, MediaType.APPLICATION_JSON));
+    }
+
+    private static void expectDelete(MockRestServiceServer server, String uri, String authorization, HttpStatus status) {
+        server.expect(once(), requestTo(uri))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(header("X-Authorization", authorization))
+                .andRespond(withStatus(status));
+    }
+
+    private static String relationDeleteUri() {
+        return HOST + "/api/relation?fromId=asset-id&fromType=ASSET&relationType=Contains&relationTypeGroup=COMMON&toId=device-id&toType=DEVICE";
     }
 
     private static VirtualRoomProvisioningRequest request() {

@@ -4,6 +4,6 @@ public interface ThingsBoardProvisioningService {
 
     ProvisionedRoomDevice provisionVirtualRoomDevice(VirtualRoomProvisioningRequest request);
 
-    default void markRoomDeviceDeleted(String tbAssetId, String tbDeviceId) {
+    default void deprovisionVirtualRoom(VirtualRoomDeprovisioningRequest request) {
     }
 }
