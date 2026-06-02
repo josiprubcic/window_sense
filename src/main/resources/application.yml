@@ -34,3 +34,9 @@ windowsense:
     host: ${THINGSBOARD_HOST:}
     access-token: ${THINGSBOARD_ACCESS_TOKEN:}
     sync-enabled: ${THINGSBOARD_SYNC_ENABLED:false}
+    provisioning-enabled: ${THINGSBOARD_PROVISIONING_ENABLED:false}
+    provisioning-auth-mode: ${THINGSBOARD_PROVISIONING_AUTH_MODE:password}
+    username: ${THINGSBOARD_USERNAME:}
+    password: ${THINGSBOARD_PASSWORD:}
+    jwt-token: ${THINGSBOARD_JWT_TOKEN:}
+    api-key: ${THINGSBOARD_API_KEY:}

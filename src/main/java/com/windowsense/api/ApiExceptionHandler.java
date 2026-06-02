@@ -2,6 +2,8 @@ package com.windowsense.api;
 
 import com.windowsense.common.ConflictException;
 import com.windowsense.common.ForbiddenException;
+import com.windowsense.common.ResourceNotFoundException;
+import com.windowsense.common.ThingsBoardProvisioningException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -39,5 +41,15 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<Map<String, String>> forbidden(ForbiddenException error) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", error.getMessage()));
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, String>> notFound(ResourceNotFoundException error) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", error.getMessage()));
+    }
+
+    @ExceptionHandler(ThingsBoardProvisioningException.class)
+    public ResponseEntity<Map<String, String>> thingsBoardProvisioning(ThingsBoardProvisioningException error) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", error.getMessage()));
     }
 }

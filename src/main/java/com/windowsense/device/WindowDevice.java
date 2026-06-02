@@ -92,6 +92,10 @@ public class WindowDevice {
         this.room = room;
     }
 
+    public void updateThingsBoardDevice(String tbDeviceId) {
+        this.tbDeviceId = tbDeviceId;
+    }
+
     public UUID getId() {
         return id;
     }

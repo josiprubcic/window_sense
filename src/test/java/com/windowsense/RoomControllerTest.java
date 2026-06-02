@@ -1,5 +1,6 @@
 package com.windowsense;
 
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,15 +11,21 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = "windowsense.security.oidc.enabled=false")
+@SpringBootTest(properties = {
+        "windowsense.security.oidc.enabled=false",
+        "windowsense.things-board.provisioning-enabled=false"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class RoomControllerTest {
@@ -100,12 +107,105 @@ class RoomControllerTest {
                 .andExpect(jsonPath("$.name").value("Naziv sobe je obavezan."));
     }
 
+    @Test
+    void updateRoomRenamesOwnedRoom() throws Exception {
+        String roomId = createRoomAs("auth0|window-user", "Dnevni boravak");
+
+        mockMvc.perform(put("/api/rooms/{roomId}", roomId)
+                        .with(user("auth0|window-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Blagovaonica"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(roomId))
+                .andExpect(jsonPath("$.name").value("Blagovaonica"))
+                .andExpect(jsonPath("$.devices", hasSize(1)))
+                .andExpect(jsonPath("$.devices[0].deviceType").value("VIRTUAL"))
+                .andExpect(jsonPath("$.devices[0].isVirtual").value(true));
+    }
+
+    @Test
+    void updateRoomRejectsDuplicateNameInSameHome() throws Exception {
+        createRoomAs("auth0|window-user", "Dnevni boravak");
+        String roomId = createRoomAs("auth0|window-user", "Spavaca soba");
+
+        mockMvc.perform(put("/api/rooms/{roomId}", roomId)
+                        .with(user("auth0|window-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Dnevni boravak"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Soba s tim nazivom vec postoji u objektu."));
+    }
+
+    @Test
+    void updateRoomReturnsNotFoundForForeignRoom() throws Exception {
+        String roomId = createRoomAs("auth0|first-user", "Kuhinja");
+
+        mockMvc.perform(put("/api/rooms/{roomId}", roomId)
+                        .with(user("auth0|second-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Ured"
+                                }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Soba nije pronadjena."));
+    }
+
+    @Test
+    void updateRoomRejectsBlankName() throws Exception {
+        String roomId = createRoomAs("auth0|window-user", "Dnevni boravak");
+
+        mockMvc.perform(put("/api/rooms/{roomId}", roomId)
+                        .with(user("auth0|window-user"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.name").value("Naziv sobe je obavezan."));
+    }
+
+    @Test
+    void deleteRoomDeletesOwnedRoom() throws Exception {
+        String roomId = createRoomAs("auth0|window-user", "Dnevni boravak");
+
+        mockMvc.perform(delete("/api/rooms/{roomId}", roomId)
+                        .with(user("auth0|window-user")))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/rooms")
+                        .with(user("auth0|window-user")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void deleteRoomReturnsNotFoundForForeignRoom() throws Exception {
+        String roomId = createRoomAs("auth0|first-user", "Kuhinja");
+
+        mockMvc.perform(delete("/api/rooms/{roomId}", roomId)
+                        .with(user("auth0|second-user")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Soba nije pronadjena."));
+    }
+
     private void createRoom(String name) throws Exception {
         createRoomAs("auth0|window-user", name);
     }
 
-    private void createRoomAs(String username, String name) throws Exception {
-        mockMvc.perform(post("/api/rooms")
+    private String createRoomAs(String username, String name) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/rooms")
                         .with(user(username))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -113,6 +213,8 @@ class RoomControllerTest {
                                   "name": "%s"
                                 }
                                 """.formatted(name)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andReturn();
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.id");
     }
 }

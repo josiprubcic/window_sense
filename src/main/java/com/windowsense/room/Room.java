@@ -78,6 +78,14 @@ public class Room {
         device.assignRoom(this);
     }
 
+    public void rename(String name) {
+        this.name = name;
+    }
+
+    public void updateThingsBoardAsset(String tbAssetId) {
+        this.tbAssetId = tbAssetId;
+    }
+
     public UUID getId() {
         return id;
     }

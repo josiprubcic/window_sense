@@ -61,6 +61,7 @@ const dom = {
 
 let currentState = null;
 let toastTimer = null;
+let editingRoomId = null;
 
 function formatPercent(value) {
   return `${Math.round(Number(value) || 0)}%`;
@@ -130,7 +131,7 @@ async function api(path, options = {}) {
     ...options
   });
 
-  const data = await response.json();
+  const data = response.status === 204 ? null : await response.json();
   if (!response.ok) {
     const validationMessage = typeof data === 'object' && data !== null
       ? Object.values(data).find((value) => typeof value === 'string')
@@ -143,6 +144,12 @@ async function api(path, options = {}) {
 
 function shortId(value) {
   return value ? value.slice(0, 8) : '--';
+}
+
+function roomErrorMessage(error) {
+  return error.message.includes('vec postoji') || error.message.includes('već postoji')
+    ? 'Soba s tim nazivom već postoji.'
+    : error.message;
 }
 
 function renderRooms(rooms) {
@@ -161,11 +168,64 @@ function renderRooms(rooms) {
     item.className = 'room-item';
 
     const header = document.createElement('header');
+    const roomMeta = document.createElement('div');
+    roomMeta.className = 'room-meta';
     const title = document.createElement('strong');
     title.textContent = room.name;
     const id = document.createElement('small');
     id.textContent = `ID ${shortId(room.id)}`;
-    header.append(title, id);
+    roomMeta.append(title, id);
+
+    const actions = document.createElement('div');
+    actions.className = 'room-actions';
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'button-secondary';
+    editButton.textContent = 'Uredi';
+    editButton.addEventListener('click', () => {
+      editingRoomId = room.id;
+      renderRooms(rooms);
+    });
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'button-danger';
+    deleteButton.textContent = 'Obriši';
+    deleteButton.addEventListener('click', () => deleteRoom(room));
+    actions.append(editButton, deleteButton);
+    header.append(roomMeta, actions);
+
+    if (editingRoomId === room.id) {
+      const editForm = document.createElement('div');
+      editForm.className = 'room-edit';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.maxLength = 120;
+      nameInput.value = room.name;
+      nameInput.setAttribute('aria-label', 'Novi naziv sobe');
+      const saveButton = document.createElement('button');
+      saveButton.type = 'button';
+      saveButton.className = 'button-secondary';
+      saveButton.textContent = 'Spremi';
+      saveButton.addEventListener('click', () => updateRoom(room.id, nameInput.value));
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.textContent = 'Odustani';
+      cancelButton.addEventListener('click', () => {
+        editingRoomId = null;
+        renderRooms(rooms);
+      });
+      nameInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          updateRoom(room.id, nameInput.value);
+        }
+      });
+      editForm.append(nameInput, saveButton, cancelButton);
+      item.append(header, editForm);
+      setTimeout(() => nameInput.focus(), 0);
+    } else {
+      item.append(header);
+    }
 
     const devices = document.createElement('div');
     devices.className = 'device-list';
@@ -179,15 +239,15 @@ function renderRooms(rooms) {
       devices.append(deviceRow);
     }
 
-    item.append(header, devices);
+    item.append(devices);
     dom.roomsList.append(item);
   }
 }
 
-async function loadRooms() {
+async function loadRooms(announce = true) {
   const rooms = await api('/api/rooms');
   renderRooms(rooms);
-  if (rooms.length > 0) {
+  if (announce && rooms.length > 0) {
     showRoomsMessage(`${rooms.length} soba ucitano.`);
   }
 }
@@ -195,7 +255,7 @@ async function loadRooms() {
 async function addRoom() {
   const name = dom.roomNameInput.value.trim();
   if (!name) {
-    showRoomsMessage('Unesite naziv sobe.', 'error');
+    showRoomsMessage('Naziv sobe ne smije biti prazan.', 'error');
     dom.roomNameInput.focus();
     return;
   }
@@ -206,13 +266,49 @@ async function addRoom() {
       body: JSON.stringify({ name })
     });
     dom.roomNameInput.value = '';
+    await loadRooms(false);
     showRoomsMessage('Soba je dodana.');
-    await loadRooms();
   } catch (error) {
-    const message = error.message.includes('vec postoji')
-      ? 'Soba s tim nazivom već postoji.'
-      : error.message;
-    showRoomsMessage(message, 'error');
+    showRoomsMessage(roomErrorMessage(error), 'error');
+  }
+}
+
+async function updateRoom(roomId, rawName) {
+  const name = rawName.trim();
+  if (!name) {
+    showRoomsMessage('Naziv sobe ne smije biti prazan.', 'error');
+    return;
+  }
+
+  try {
+    await api(`/api/rooms/${roomId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name })
+    });
+    editingRoomId = null;
+    await loadRooms(false);
+    showRoomsMessage('Soba je uspješno ažurirana.');
+  } catch (error) {
+    showRoomsMessage(roomErrorMessage(error), 'error');
+  }
+}
+
+async function deleteRoom(room) {
+  if (!window.confirm(`Obrisati sobu "${room.name}"?`)) {
+    return;
+  }
+
+  try {
+    await api(`/api/rooms/${room.id}`, {
+      method: 'DELETE'
+    });
+    if (editingRoomId === room.id) {
+      editingRoomId = null;
+    }
+    await loadRooms(false);
+    showRoomsMessage('Soba je obrisana.');
+  } catch (error) {
+    showRoomsMessage(roomErrorMessage(error), 'error');
   }
 }
 

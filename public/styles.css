@@ -55,6 +55,11 @@ button:active {
   transform: translateY(0);
 }
 
+.button-danger {
+  border-color: rgba(194, 65, 58, 0.28);
+  color: var(--red);
+}
+
 .app-shell {
   width: min(1440px, 100%);
   margin: 0 auto;
@@ -510,6 +515,41 @@ input[type="checkbox"] {
   align-items: flex-start;
 }
 
+.room-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.room-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.room-actions button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.room-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+
+.room-edit input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: #fbfcfb;
+  color: var(--text);
+}
+
 .room-item strong {
   font-size: 15px;
 }
@@ -605,5 +645,17 @@ input[type="checkbox"] {
 
   .status-grid {
     grid-template-columns: 1fr;
+  }
+
+  .room-edit {
+    grid-template-columns: 1fr;
+  }
+
+  .room-item header {
+    flex-direction: column;
+  }
+
+  .room-actions {
+    justify-content: flex-start;
   }
 }

@@ -2,5 +2,8 @@ package com.windowsense.thingsboard;
 
 public interface ThingsBoardProvisioningService {
 
-    ProvisionedRoomDevice provisionVirtualRoomDevice(String roomName, String deviceName);
+    ProvisionedRoomDevice provisionVirtualRoomDevice(VirtualRoomProvisioningRequest request);
+
+    default void markRoomDeviceDeleted(String tbAssetId, String tbDeviceId) {
+    }
 }

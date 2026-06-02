@@ -40,6 +40,12 @@ public class WindowSenseProperties {
         private String host = "";
         private String accessToken = "";
         private boolean syncEnabled = false;
+        private boolean provisioningEnabled = false;
+        private ProvisioningAuthMode provisioningAuthMode = ProvisioningAuthMode.PASSWORD;
+        private String username = "";
+        private String password = "";
+        private String jwtToken = "";
+        private String apiKey = "";
 
         public String getHost() {
             return host;
@@ -65,9 +71,71 @@ public class WindowSenseProperties {
             this.syncEnabled = syncEnabled;
         }
 
+        public boolean isProvisioningEnabled() {
+            return provisioningEnabled;
+        }
+
+        public void setProvisioningEnabled(boolean provisioningEnabled) {
+            this.provisioningEnabled = provisioningEnabled;
+        }
+
+        public ProvisioningAuthMode getProvisioningAuthMode() {
+            return provisioningAuthMode;
+        }
+
+        public void setProvisioningAuthMode(ProvisioningAuthMode provisioningAuthMode) {
+            this.provisioningAuthMode = provisioningAuthMode == null ? ProvisioningAuthMode.PASSWORD : provisioningAuthMode;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username == null ? "" : username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password == null ? "" : password;
+        }
+
+        public String getJwtToken() {
+            return jwtToken;
+        }
+
+        public void setJwtToken(String jwtToken) {
+            this.jwtToken = jwtToken == null ? "" : jwtToken;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey == null ? "" : apiKey;
+        }
+
         public boolean isReady() {
             return syncEnabled && !host.isBlank() && !accessToken.isBlank();
         }
+
+        public boolean isProvisioningReady() {
+            return provisioningEnabled && !host.isBlank() && switch (provisioningAuthMode) {
+                case PASSWORD -> !username.isBlank() && !password.isBlank();
+                case JWT -> !jwtToken.isBlank();
+                case API_KEY -> !apiKey.isBlank();
+            };
+        }
+    }
+
+    public enum ProvisioningAuthMode {
+        PASSWORD,
+        JWT,
+        API_KEY
     }
 
     public static class Security {
