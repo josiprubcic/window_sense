@@ -33,7 +33,7 @@ class AutomationServiceTest {
     void lowersBlindsOnStrongLight() {
         WindowSenseState state = WindowSenseState.createDefault("test-device");
         state.sensors.lightLux = 80000;
-        state.sensors.indoorTempC = 22;
+        state.sensors.indoorTempC = 26;
         state.actuators.blinds.positionPercent = 10;
 
         List<Decision> decisions = automationService.evaluate(state);

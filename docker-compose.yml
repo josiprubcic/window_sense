@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: windowsense-postgres
+    environment:
+      POSTGRES_DB: windowsense
+      POSTGRES_USER: windowsense
+      POSTGRES_PASSWORD: windowsense
+    ports:
+      - "5433:5432"
+    volumes:
+      - windowsense_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  windowsense_postgres_data:

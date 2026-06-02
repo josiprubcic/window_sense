@@ -28,7 +28,7 @@ public class WindowSenseState {
         state.sensors.rainIntensity = 0;
         state.sensors.lightLux = 42000;
         state.sensors.windowContactOpen = true;
-        state.sensors.indoorTempC = 24.8;
+        state.sensors.indoorTempC = 24;
         state.sensors.outdoorTempC = 20.9;
         state.sensors.batteryPercent = 94;
         state.sensors.signalStrength = -58;

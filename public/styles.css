@@ -150,7 +150,7 @@ h2 {
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -176,6 +176,10 @@ h2 {
 
 .metric--light {
   border-top-color: var(--amber);
+}
+
+.metric--temp {
+  border-top-color: var(--red);
 }
 
 .metric--window {
@@ -361,7 +365,7 @@ input[type="checkbox"] {
 
 .lower-grid {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr 1.2fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -450,6 +454,80 @@ input[type="checkbox"] {
 .event-list small {
   color: var(--muted);
   line-height: 1.35;
+}
+
+.room-form {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.room-form input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: #fbfcfb;
+  color: var(--text);
+}
+
+.form-message {
+  min-height: 20px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.form-message[data-level="error"] {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.rooms-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.room-item {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.room-item header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.room-item strong {
+  font-size: 15px;
+}
+
+.room-item small,
+.device-list span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.device-list {
+  display: grid;
+  gap: 6px;
+}
+
+.device-list div {
+  display: grid;
+  gap: 4px;
 }
 
 .toast {

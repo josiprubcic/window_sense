@@ -9,6 +9,8 @@ logging:
     org.springframework: INFO
 
 spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
   config:
     import: optional:file:.env[.properties]
   application:

@@ -35,6 +35,11 @@
             <strong id="lightValue">--</strong>
             <small id="lightDetail">--</small>
           </article>
+          <article class="metric metric--temp">
+            <span class="metric__label">Temperatura</span>
+            <strong id="tempValue">--</strong>
+            <small id="tempDetail">--</small>
+          </article>
           <article class="metric metric--window">
             <span class="metric__label">Prozor</span>
             <strong id="windowValue">--</strong>
@@ -141,6 +146,11 @@
                 <input id="windInput" type="range" min="0" max="100" step="1">
                 <output id="windInputValue">--</output>
               </label>
+              <label class="range-row">
+                <span>Temperatura</span>
+                <input id="temperatureInput" type="range" min="-10" max="45" step="0.5" value="24">
+                <output id="temperatureInputValue">24 °C</output>
+              </label>
             </section>
           </aside>
         </section>
@@ -196,6 +206,19 @@
           <article class="panel-section events-panel">
             <h2>Dogadjaji</h2>
             <ol id="eventList" class="event-list"></ol>
+          </article>
+
+          <article class="panel-section rooms-panel">
+            <div class="panel-title">
+              <h2>Sobe</h2>
+              <button id="addRoomButton" class="button-secondary">Dodaj sobu</button>
+            </div>
+            <label class="room-form">
+              <span>Naziv sobe</span>
+              <input id="roomNameInput" type="text" maxlength="120" placeholder="Spavaca soba">
+            </label>
+            <p id="roomsMessage" class="form-message" role="status" aria-live="polite"></p>
+            <div id="roomsList" class="rooms-list"></div>
           </article>
         </section>
       </main>

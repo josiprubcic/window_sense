@@ -34,6 +34,10 @@ const dom = {
   rainProbabilityValue: document.querySelector('#rainProbabilityValue'),
   windInput: document.querySelector('#windInput'),
   windInputValue: document.querySelector('#windInputValue'),
+  temperatureInput: document.querySelector('#temperatureInput'),
+  temperatureInputValue: document.querySelector('#temperatureInputValue'),
+  tempValue: document.querySelector('#tempValue'),
+  tempDetail: document.querySelector('#tempDetail'),
   applyTelemetryButton: document.querySelector('#applyTelemetryButton'),
   saveThresholdsButton: document.querySelector('#saveThresholdsButton'),
   thresholdRain: document.querySelector('#thresholdRain'),
@@ -48,7 +52,11 @@ const dom = {
   toast: document.querySelector('#toast'),
   loginLink: document.querySelector('#loginLink'),
   userName: document.querySelector('#userName'),
-  logoutLink: document.querySelector('#logoutLink')
+  logoutLink: document.querySelector('#logoutLink'),
+  roomNameInput: document.querySelector('#roomNameInput'),
+  addRoomButton: document.querySelector('#addRoomButton'),
+  roomsMessage: document.querySelector('#roomsMessage'),
+  roomsList: document.querySelector('#roomsList')
 };
 
 let currentState = null;
@@ -65,6 +73,10 @@ function formatLux(value) {
   }
 
   return `${Math.round(number)} lx`;
+}
+
+function formatTemp(value) {
+  return `${Math.round((Number(value) || 0) * 10) / 10} °C`;
 }
 
 function formatDate(value) {
@@ -84,6 +96,11 @@ function showToast(message) {
   dom.toast.classList.add('is-visible');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => dom.toast.classList.remove('is-visible'), 2600);
+}
+
+function showRoomsMessage(message, level = 'info') {
+  dom.roomsMessage.textContent = message;
+  dom.roomsMessage.dataset.level = level;
 }
 
 function setVisible(element, visible) {
@@ -115,10 +132,88 @@ async function api(path, options = {}) {
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || 'API zahtjev nije uspio.');
+    const validationMessage = typeof data === 'object' && data !== null
+      ? Object.values(data).find((value) => typeof value === 'string')
+      : null;
+    throw new Error(data.error || validationMessage || 'API zahtjev nije uspio.');
   }
 
   return data;
+}
+
+function shortId(value) {
+  return value ? value.slice(0, 8) : '--';
+}
+
+function renderRooms(rooms) {
+  dom.roomsList.innerHTML = '';
+
+  if (rooms.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'form-message';
+    empty.textContent = 'Jos nema dodanih soba.';
+    dom.roomsList.append(empty);
+    return;
+  }
+
+  for (const room of rooms) {
+    const item = document.createElement('section');
+    item.className = 'room-item';
+
+    const header = document.createElement('header');
+    const title = document.createElement('strong');
+    title.textContent = room.name;
+    const id = document.createElement('small');
+    id.textContent = `ID ${shortId(room.id)}`;
+    header.append(title, id);
+
+    const devices = document.createElement('div');
+    devices.className = 'device-list';
+    for (const device of room.devices || []) {
+      const deviceRow = document.createElement('div');
+      const deviceName = document.createElement('strong');
+      deviceName.textContent = device.name;
+      const meta = document.createElement('span');
+      meta.textContent = `${device.deviceType} / ${device.status} / isVirtual=${device.isVirtual}`;
+      deviceRow.append(deviceName, meta);
+      devices.append(deviceRow);
+    }
+
+    item.append(header, devices);
+    dom.roomsList.append(item);
+  }
+}
+
+async function loadRooms() {
+  const rooms = await api('/api/rooms');
+  renderRooms(rooms);
+  if (rooms.length > 0) {
+    showRoomsMessage(`${rooms.length} soba ucitano.`);
+  }
+}
+
+async function addRoom() {
+  const name = dom.roomNameInput.value.trim();
+  if (!name) {
+    showRoomsMessage('Unesite naziv sobe.', 'error');
+    dom.roomNameInput.focus();
+    return;
+  }
+
+  try {
+    await api('/api/rooms', {
+      method: 'POST',
+      body: JSON.stringify({ name })
+    });
+    dom.roomNameInput.value = '';
+    showRoomsMessage('Soba je dodana.');
+    await loadRooms();
+  } catch (error) {
+    const message = error.message.includes('vec postoji')
+      ? 'Soba s tim nazivom već postoji.'
+      : error.message;
+    showRoomsMessage(message, 'error');
+  }
 }
 
 function setStatusClass(element, status) {
@@ -161,6 +256,8 @@ function syncInputs(state) {
   dom.rainProbabilityValue.textContent = formatPercent(state.weather.rainProbability);
   dom.windInput.value = state.weather.windKph;
   dom.windInputValue.textContent = `${Math.round(state.weather.windKph)} km/h`;
+  dom.temperatureInput.value = state.sensors.indoorTempC;
+  dom.temperatureInputValue.textContent = formatTemp(state.sensors.indoorTempC);
 
   dom.thresholdRain.value = state.automation.thresholds.rainProbabilityClose;
   dom.thresholdLux.value = state.automation.thresholds.lightLuxShade;
@@ -189,6 +286,8 @@ function render(state) {
   dom.rainDetail.textContent = `${Math.round(state.sensors.rainIntensity)} intenzitet / ${rainProbability}% prognoza`;
   dom.lightValue.textContent = formatLux(state.sensors.lightLux);
   dom.lightDetail.textContent = `Prag zasjene ${formatLux(state.automation.thresholds.lightLuxShade)}`;
+  dom.tempValue.textContent = formatTemp(state.sensors.indoorTempC);
+  dom.tempDetail.textContent = `Prag zasjene ${formatTemp(state.automation.thresholds.indoorTempShadeC)}`;
   dom.windowValue.textContent = formatPercent(state.actuators.window.openPercent);
   dom.windowDetail.textContent = state.sensors.windowContactOpen ? 'Kontakt: otvoren' : 'Kontakt: zatvoren';
   dom.blindsValue.textContent = formatPercent(state.actuators.blinds.positionPercent);
@@ -264,6 +363,9 @@ function bindControls() {
   dom.windInput.addEventListener('input', () => {
     dom.windInputValue.textContent = `${Math.round(dom.windInput.value)} km/h`;
   });
+  dom.temperatureInput.addEventListener('input', () => {
+    dom.temperatureInputValue.textContent = formatTemp(dom.temperatureInput.value);
+  });
 
   dom.applyTelemetryButton.addEventListener('click', async () => {
     try {
@@ -275,7 +377,8 @@ function bindControls() {
           rainIntensity: dom.rainToggle.checked ? 70 : 0,
           lightLux: Number(dom.luxInput.value),
           rainProbability: Number(dom.rainProbabilityInput.value),
-          windKph: Number(dom.windInput.value)
+          windKph: Number(dom.windInput.value),
+          indoorTempC: Number(dom.temperatureInput.value)
         })
       });
       showToast('Simulacija je primijenjena.');
@@ -298,6 +401,14 @@ function bindControls() {
       showToast('Pravila su spremljena.');
     } catch (error) {
       showToast(error.message);
+    }
+  });
+
+  dom.addRoomButton.addEventListener('click', () => addRoom());
+  dom.roomNameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addRoom();
     }
   });
 }
@@ -327,6 +438,7 @@ async function boot() {
     }
 
     render(await api('/api/state'));
+    await loadRooms();
     startStream();
   } catch (error) {
     showToast(error.message);

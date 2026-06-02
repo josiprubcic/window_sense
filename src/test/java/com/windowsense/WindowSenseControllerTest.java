@@ -83,6 +83,26 @@ class WindowSenseControllerTest {
     }
 
     @Test
+    void stateEndpointReturnsIndoorTemperature() throws Exception {
+        mockMvc.perform(get("/api/state"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sensors.indoorTempC").value(24.0));
+    }
+
+    @Test
+    void telemetryCanUpdateIndoorTemperature() throws Exception {
+        mockMvc.perform(post("/api/telemetry")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "indoorTempC": 28.5
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.state.sensors.indoorTempC").value(28.5));
+    }
+
+    @Test
     void telemetryCanTriggerAutomationAndQueueDeviceCommand() throws Exception {
         mockMvc.perform(post("/api/telemetry")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -111,6 +131,7 @@ class WindowSenseControllerTest {
                         .content("""
                                 {
                                   "lightLux": 80000,
+                                  "indoorTempC": 26,
                                   "blindsPositionPercent": 10
                                 }
                                 """))
