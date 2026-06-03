@@ -10,3 +10,7 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+
+windowsense:
+  virtual-simulator:
+    enabled: false

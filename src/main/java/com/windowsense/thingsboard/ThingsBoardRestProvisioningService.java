@@ -26,6 +26,8 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
 
     private static final String ASSET_TYPE = "WindowSense Room";
     private static final String DEVICE_TYPE = "WindowSense Virtual Window";
+    private static final String PENDING_THINGSBOARD_ID = "pending-thingsboard-provisioning";
+    private static final String MOCK_THINGSBOARD_ASSET_PREFIX = "tb-asset-";
     private static final String AUTH_HEADER = "X-Authorization";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_RESPONSE = new ParameterizedTypeReference<>() {
     };
@@ -52,6 +54,7 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
 
             String assetId = provisioningStep("create asset", () -> createAsset(authorization, tbAssetName, request.roomName()));
             String deviceId = provisioningStep("create device", () -> createDevice(authorization, tbDeviceName, request.deviceName()));
+            String deviceAccessToken = provisioningStep("fetch device credentials", () -> fetchDeviceAccessToken(authorization, deviceId));
             provisioningStep("create relation", () -> {
                 createRelation(authorization, assetId, deviceId);
                 return null;
@@ -61,11 +64,38 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
                 return null;
             });
 
-            // TODO: Persist ThingsBoard device credentials only after encrypted storage is added.
-            return new ProvisionedRoomDevice(assetId, deviceId);
+            return new ProvisionedRoomDevice(assetId, deviceId, deviceAccessToken);
         } catch (RestClientException | IllegalArgumentException error) {
             log.warn("ThingsBoard provisioning failed: {}", error.getClass().getSimpleName());
             throw new ThingsBoardProvisioningException("ThingsBoard provisioning nije uspio.", error);
+        }
+    }
+
+    @Override
+    public void linkExistingPhysicalDevice(ExistingPhysicalDeviceLinkRequest request) {
+        if (request.tbDeviceId() == null || request.tbDeviceId().isBlank()) {
+            throw new IllegalArgumentException("ThingsBoard Device ID je obavezan.");
+        }
+
+        if (!properties.isProvisioningReady()) {
+            throw new ThingsBoardProvisioningException("ThingsBoard provisioning nije ispravno konfiguriran.");
+        }
+
+        try {
+            String authorization = authorizationHeader();
+            provisioningStep("verify existing physical device", () -> {
+                verifyDeviceExists(authorization, request.tbDeviceId());
+                return null;
+            });
+            if (isLinkableAssetId(request.tbAssetId())) {
+                provisioningStep("create physical device relation", () -> {
+                    createRelation(authorization, request.tbAssetId(), request.tbDeviceId());
+                    return null;
+                });
+            }
+        } catch (RestClientException | IllegalArgumentException error) {
+            log.warn("ThingsBoard physical device link failed for room {}: {}", request.roomId(), error.getClass().getSimpleName());
+            throw new ThingsBoardProvisioningException("ThingsBoard povezivanje fizickog uredjaja nije uspjelo.", error);
         }
     }
 
@@ -202,6 +232,32 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
         return entityId(response, "Device");
     }
 
+    private String fetchDeviceAccessToken(String authorization, String deviceId) {
+        Map<String, Object> response = restClient.get()
+                .uri(properties.getHost() + "/api/device/" + deviceId + "/credentials")
+                .header(AUTH_HEADER, authorization)
+                .retrieve()
+                .body(MAP_RESPONSE);
+
+        String credentialsType = stringValue(response, "credentialsType");
+        String credentialsId = stringValue(response, "credentialsId");
+        String credentialsValue = stringValue(response, "credentialsValue");
+        String token = !credentialsId.isBlank() ? credentialsId : credentialsValue;
+        if (!"ACCESS_TOKEN".equals(credentialsType) || token.isBlank()) {
+            throw new IllegalArgumentException("ThingsBoard device credentials ne sadrze access token.");
+        }
+
+        return token;
+    }
+
+    private void verifyDeviceExists(String authorization, String deviceId) {
+        restClient.get()
+                .uri(properties.getHost() + "/api/device/" + deviceId)
+                .header(AUTH_HEADER, authorization)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
     private void createRelation(String authorization, String assetId, String deviceId) {
         restClient.post()
                 .uri(properties.getHost() + "/api/relation")
@@ -293,5 +349,17 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
 
     private static Object value(Map<String, Object> map, String key) {
         return map == null ? null : map.get(key);
+    }
+
+    private static String stringValue(Map<String, Object> map, String key) {
+        Object value = value(map, key);
+        return value == null ? "" : value.toString();
+    }
+
+    private static boolean isLinkableAssetId(String tbAssetId) {
+        return tbAssetId != null
+                && !tbAssetId.isBlank()
+                && !PENDING_THINGSBOARD_ID.equals(tbAssetId)
+                && !tbAssetId.startsWith(MOCK_THINGSBOARD_ASSET_PREFIX);
     }
 }

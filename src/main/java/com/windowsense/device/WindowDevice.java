@@ -51,6 +51,9 @@ public class WindowDevice {
     @Column(name = "tb_device_id", nullable = false, length = 128)
     private String tbDeviceId;
 
+    @Column(name = "tb_device_token_encrypted", columnDefinition = "TEXT")
+    private String tbDeviceTokenEncrypted;
+
     @Column(name = "physical_hardware_id", unique = true, length = 128)
     private String physicalHardwareId;
 
@@ -76,6 +79,10 @@ public class WindowDevice {
         return new WindowDevice(name, DeviceType.VIRTUAL, true, DeviceStatus.ACTIVE, tbDeviceId);
     }
 
+    public static WindowDevice physicalDevice(String name, String tbDeviceId) {
+        return new WindowDevice(name, DeviceType.PHYSICAL, false, DeviceStatus.ACTIVE, tbDeviceId);
+    }
+
     @PrePersist
     void prePersist() {
         Instant now = Instant.now();
@@ -96,8 +103,16 @@ public class WindowDevice {
         this.tbDeviceId = tbDeviceId;
     }
 
+    public void storeEncryptedThingsBoardDeviceToken(String tbDeviceTokenEncrypted) {
+        this.tbDeviceTokenEncrypted = tbDeviceTokenEncrypted;
+    }
+
     public UUID getId() {
         return id;
+    }
+
+    public Room getRoom() {
+        return room;
     }
 
     public String getName() {
@@ -118,6 +133,10 @@ public class WindowDevice {
 
     public String getTbDeviceId() {
         return tbDeviceId;
+    }
+
+    public String getTbDeviceTokenEncrypted() {
+        return tbDeviceTokenEncrypted;
     }
 
     public String getPhysicalHardwareId() {

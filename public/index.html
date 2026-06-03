@@ -13,6 +13,10 @@
           <h1>WindowSense</h1>
           <p id="siteArea">Pametna zgrada</p>
         </div>
+        <nav id="appNav" class="app-nav" aria-label="Glavna navigacija" hidden>
+          <a href="#/dashboard" data-route-link="dashboard">Dashboard</a>
+          <a href="#/rooms" data-route-link="rooms">Sobe</a>
+        </nav>
         <div class="topbar__meta">
           <span id="automationMode" class="status-pill">AUTO</span>
           <span id="iotStatus" class="status-pill status-pill--neutral">ThingsBoard</span>
@@ -23,8 +27,17 @@
         </div>
       </header>
 
-      <main class="dashboard">
-        <section class="overview-grid" aria-label="Stanje sustava">
+      <main>
+        <section id="loginView" class="login-view" hidden>
+          <div class="login-panel">
+            <h2>WindowSense</h2>
+            <p>Prijavite se za pristup dashboardu i sobama.</p>
+            <a id="loginCta" class="login-button" href="/oauth2/authorization/windowsense">Prijava</a>
+          </div>
+        </section>
+
+        <section id="dashboardView" class="dashboard view" hidden>
+          <section class="overview-grid" aria-label="Stanje sustava">
           <article class="metric metric--rain">
             <span class="metric__label">Kisa</span>
             <strong id="rainValue">--</strong>
@@ -50,9 +63,9 @@
             <strong id="blindsValue">--</strong>
             <small id="blindsDetail">--</small>
           </article>
-        </section>
+          </section>
 
-        <section class="workspace">
+          <section class="workspace">
           <article class="visual-panel">
             <div class="visual-panel__header">
               <div>
@@ -153,9 +166,9 @@
               </label>
             </section>
           </aside>
-        </section>
+          </section>
 
-        <section class="lower-grid">
+          <section class="lower-grid">
           <article class="panel-section automation-panel">
             <div class="panel-title">
               <h2>Pravila</h2>
@@ -207,7 +220,10 @@
             <h2>Dogadjaji</h2>
             <ol id="eventList" class="event-list"></ol>
           </article>
+          </section>
+        </section>
 
+        <section id="roomsView" class="rooms-page view" hidden>
           <article class="panel-section rooms-panel">
             <div class="panel-title">
               <h2>Sobe</h2>

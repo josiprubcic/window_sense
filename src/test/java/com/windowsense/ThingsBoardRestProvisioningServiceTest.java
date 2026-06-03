@@ -4,6 +4,7 @@ import com.windowsense.common.ThingsBoardProvisioningException;
 import com.windowsense.config.WindowSenseProperties;
 import com.windowsense.config.WindowSenseProperties.ProvisioningAuthMode;
 import com.windowsense.config.WindowSenseProperties.ThingsBoardDeleteMode;
+import com.windowsense.thingsboard.ExistingPhysicalDeviceLinkRequest;
 import com.windowsense.thingsboard.ThingsBoardRestProvisioningService;
 import com.windowsense.thingsboard.VirtualRoomDeprovisioningRequest;
 import com.windowsense.thingsboard.VirtualRoomProvisioningRequest;
@@ -16,6 +17,7 @@ import org.springframework.web.client.RestClient;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
@@ -39,8 +41,9 @@ class ThingsBoardRestProvisioningServiceTest {
         expectLogin(context.server);
         expectProvisioningCalls(context.server, "Bearer jwt-from-login");
 
-        context.service.provisionVirtualRoomDevice(request());
+        var provisioned = context.service.provisionVirtualRoomDevice(request());
 
+        assertThat(provisioned.tbDeviceAccessToken()).isEqualTo("device-access-token");
         context.server.verify();
     }
 
@@ -52,8 +55,9 @@ class ThingsBoardRestProvisioningServiceTest {
 
         expectProvisioningCalls(context.server, "Bearer jwt-provisioning-token");
 
-        context.service.provisionVirtualRoomDevice(request());
+        var provisioned = context.service.provisionVirtualRoomDevice(request());
 
+        assertThat(provisioned.tbDeviceAccessToken()).isEqualTo("device-access-token");
         context.server.verify();
     }
 
@@ -64,8 +68,9 @@ class ThingsBoardRestProvisioningServiceTest {
 
         expectProvisioningCalls(context.server, "ApiKey provisioning-api-key");
 
-        context.service.provisionVirtualRoomDevice(request());
+        var provisioned = context.service.provisionVirtualRoomDevice(request());
 
+        assertThat(provisioned.tbDeviceAccessToken()).isEqualTo("device-access-token");
         context.server.verify();
     }
 
@@ -77,7 +82,37 @@ class ThingsBoardRestProvisioningServiceTest {
 
         expectProvisioningCalls(context.server, "Bearer jwt-provisioning-token");
 
-        context.service.provisionVirtualRoomDevice(request());
+        var provisioned = context.service.provisionVirtualRoomDevice(request());
+
+        assertThat(provisioned.tbDeviceAccessToken()).isEqualTo("device-access-token");
+        context.server.verify();
+    }
+
+    @Test
+    void linkExistingPhysicalDeviceVerifiesDeviceAndCreatesRelationWithoutFetchingCredentials() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+
+        expectGet(context.server, HOST + "/api/device/existing-device-id", "ApiKey provisioning-api-key", """
+                {
+                  "id": {
+                    "entityType": "DEVICE",
+                    "id": "existing-device-id"
+                  }
+                }
+                """);
+        expectPost(context.server, HOST + "/api/relation", "ApiKey provisioning-api-key", "");
+
+        context.service.linkExistingPhysicalDevice(new ExistingPhysicalDeviceLinkRequest(
+                ROOM_ID,
+                "Kuhinja",
+                "asset-id",
+                "existing-device-id",
+                "ESP32 - Fizicki prototip",
+                null,
+                USER_ID,
+                "auth0|window-user"
+        ));
 
         context.server.verify();
     }
@@ -241,6 +276,12 @@ class ThingsBoardRestProvisioningServiceTest {
                   }
                 }
                 """);
+        expectGet(server, HOST + "/api/device/device-id/credentials", authorization, """
+                {
+                  "credentialsType": "ACCESS_TOKEN",
+                  "credentialsId": "device-access-token"
+                }
+                """);
         expectPost(server, HOST + "/api/relation", authorization, "");
         expectPost(server, HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SERVER_SCOPE", authorization, "");
         expectPost(server, HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SHARED_SCOPE", authorization, "");
@@ -249,6 +290,13 @@ class ThingsBoardRestProvisioningServiceTest {
     private static void expectPost(MockRestServiceServer server, String uri, String authorization, String responseBody) {
         server.expect(once(), requestTo(uri))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Authorization", authorization))
+                .andRespond(withSuccess(responseBody, MediaType.APPLICATION_JSON));
+    }
+
+    private static void expectGet(MockRestServiceServer server, String uri, String authorization, String responseBody) {
+        server.expect(once(), requestTo(uri))
+                .andExpect(method(HttpMethod.GET))
                 .andExpect(header("X-Authorization", authorization))
                 .andRespond(withSuccess(responseBody, MediaType.APPLICATION_JSON));
     }

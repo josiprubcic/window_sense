@@ -11,6 +11,8 @@ public class WindowSenseProperties {
     private String deviceId = "windowsense-esp32-01";
     private ThingsBoard thingsBoard = new ThingsBoard();
     private Security security = new Security();
+    private Encryption encryption = new Encryption();
+    private VirtualSimulator virtualSimulator = new VirtualSimulator();
 
     public String getDeviceId() {
         return deviceId;
@@ -34,6 +36,22 @@ public class WindowSenseProperties {
 
     public void setSecurity(Security security) {
         this.security = security == null ? new Security() : security;
+    }
+
+    public Encryption getEncryption() {
+        return encryption;
+    }
+
+    public void setEncryption(Encryption encryption) {
+        this.encryption = encryption == null ? new Encryption() : encryption;
+    }
+
+    public VirtualSimulator getVirtualSimulator() {
+        return virtualSimulator;
+    }
+
+    public void setVirtualSimulator(VirtualSimulator virtualSimulator) {
+        this.virtualSimulator = virtualSimulator == null ? new VirtualSimulator() : virtualSimulator;
     }
 
     public static class ThingsBoard {
@@ -150,6 +168,61 @@ public class WindowSenseProperties {
     public enum ThingsBoardDeleteMode {
         SOFT,
         HARD
+    }
+
+    public static class Encryption {
+        private String key = "";
+
+        public String getKey() {
+            return key;
+        }
+
+        public void setKey(String key) {
+            this.key = key == null ? "" : key.trim();
+        }
+    }
+
+    public static class VirtualSimulator {
+        private boolean enabled = false;
+        private long intervalMs = 5000;
+        private String rainStateFilePath = "./stanje_kise.txt";
+        private String weatherDataFilePath = "./vrijeme.csv";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public long getIntervalMs() {
+            return intervalMs;
+        }
+
+        public void setIntervalMs(long intervalMs) {
+            this.intervalMs = intervalMs <= 0 ? 5000 : intervalMs;
+        }
+
+        public String getRainStateFilePath() {
+            return rainStateFilePath;
+        }
+
+        public void setRainStateFilePath(String rainStateFilePath) {
+            this.rainStateFilePath = rainStateFilePath == null || rainStateFilePath.isBlank()
+                    ? "./stanje_kise.txt"
+                    : rainStateFilePath.trim();
+        }
+
+        public String getWeatherDataFilePath() {
+            return weatherDataFilePath;
+        }
+
+        public void setWeatherDataFilePath(String weatherDataFilePath) {
+            this.weatherDataFilePath = weatherDataFilePath == null || weatherDataFilePath.isBlank()
+                    ? "./vrijeme.csv"
+                    : weatherDataFilePath.trim();
+        }
     }
 
     public static class Security {

@@ -1,6 +1,7 @@
 package com.windowsense.api;
 
 import com.windowsense.common.ConflictException;
+import com.windowsense.common.EncryptionException;
 import com.windowsense.common.ForbiddenException;
 import com.windowsense.common.ResourceNotFoundException;
 import com.windowsense.common.ThingsBoardProvisioningException;
@@ -51,5 +52,10 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ThingsBoardProvisioningException.class)
     public ResponseEntity<Map<String, String>> thingsBoardProvisioning(ThingsBoardProvisioningException error) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", error.getMessage()));
+    }
+
+    @ExceptionHandler(EncryptionException.class)
+    public ResponseEntity<Map<String, String>> encryption(EncryptionException error) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", error.getMessage()));
     }
 }

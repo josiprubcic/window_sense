@@ -23,6 +23,13 @@ spring:
 
 windowsense:
   device-id: ${WINDOWSENSE_DEVICE_ID:windowsense-esp32-01}
+  encryption:
+    key: ${APP_ENCRYPTION_KEY:}
+  virtual-simulator:
+    enabled: ${VIRTUAL_SIMULATOR_ENABLED:false}
+    interval-ms: ${VIRTUAL_SIMULATOR_INTERVAL_MS:5000}
+    rain-state-file-path: ${RAIN_STATE_FILE_PATH:./stanje_kise.txt}
+    weather-data-file-path: ${WEATHER_DATA_FILE_PATH:./vrijeme.csv}
   security:
     oidc:
       enabled: ${OIDC_ENABLED:false}

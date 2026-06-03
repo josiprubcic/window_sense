@@ -1,7 +1,10 @@
 package com.windowsense.room;
 
+import com.windowsense.room.dto.ConnectPhysicalDeviceRequest;
 import com.windowsense.room.dto.CreateRoomRequest;
+import com.windowsense.room.dto.PairPhysicalDeviceRequest;
 import com.windowsense.room.dto.RoomResponse;
+import com.windowsense.room.dto.RoomTelemetryResponse;
 import com.windowsense.room.dto.UpdateRoomRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -42,6 +45,23 @@ public class RoomController {
     @PutMapping("/{roomId}")
     public RoomResponse updateRoom(@PathVariable UUID roomId, @Valid @RequestBody UpdateRoomRequest request) {
         return roomService.updateRoom(roomId, request);
+    }
+
+    @PostMapping("/{roomId}/devices/physical")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RoomResponse connectPhysicalDevice(@PathVariable UUID roomId, @Valid @RequestBody ConnectPhysicalDeviceRequest request) {
+        return roomService.connectPhysicalDevice(roomId, request);
+    }
+
+    @PostMapping("/{roomId}/devices/pair")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RoomResponse pairPhysicalDevice(@PathVariable UUID roomId, @Valid @RequestBody PairPhysicalDeviceRequest request) {
+        return roomService.pairPhysicalDevice(roomId, request);
+    }
+
+    @GetMapping("/{roomId}/telemetry/latest")
+    public RoomTelemetryResponse latestTelemetry(@PathVariable UUID roomId) {
+        return roomService.latestTelemetry(roomId);
     }
 
     @DeleteMapping("/{roomId}")

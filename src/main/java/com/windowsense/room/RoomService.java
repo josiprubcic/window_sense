@@ -3,14 +3,27 @@ package com.windowsense.room;
 import com.windowsense.auth.CurrentUserService;
 import com.windowsense.common.ConflictException;
 import com.windowsense.common.ResourceNotFoundException;
+import com.windowsense.device.DeviceStatus;
+import com.windowsense.device.DeviceType;
+import com.windowsense.device.PhysicalDevicePairingCodeHasher;
+import com.windowsense.device.PhysicalDeviceRegistry;
+import com.windowsense.device.PhysicalDeviceRegistryRepository;
+import com.windowsense.device.PhysicalDeviceRegistryStatus;
 import com.windowsense.device.WindowDevice;
+import com.windowsense.device.WindowDeviceRepository;
 import com.windowsense.home.Home;
 import com.windowsense.home.HomeRepository;
+import com.windowsense.room.dto.ConnectPhysicalDeviceRequest;
 import com.windowsense.room.dto.CreateRoomRequest;
+import com.windowsense.room.dto.PairPhysicalDeviceRequest;
 import com.windowsense.room.dto.RoomResponse;
+import com.windowsense.room.dto.RoomTelemetryResponse;
 import com.windowsense.room.dto.UpdateRoomRequest;
+import com.windowsense.security.EncryptionService;
+import com.windowsense.thingsboard.ExistingPhysicalDeviceLinkRequest;
 import com.windowsense.thingsboard.ProvisionedRoomDevice;
 import com.windowsense.thingsboard.ThingsBoardProvisioningService;
+import com.windowsense.thingsboard.ThingsBoardTelemetryQueryService;
 import com.windowsense.thingsboard.VirtualRoomDeprovisioningRequest;
 import com.windowsense.thingsboard.VirtualRoomProvisioningRequest;
 import com.windowsense.user.AppUser;
@@ -18,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -31,20 +45,32 @@ public class RoomService {
     private final CurrentUserService currentUserService;
     private final HomeRepository homeRepository;
     private final RoomRepository roomRepository;
+    private final WindowDeviceRepository windowDeviceRepository;
+    private final PhysicalDeviceRegistryRepository physicalDeviceRegistryRepository;
     private final ThingsBoardProvisioningService thingsBoardProvisioningService;
+    private final ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService;
+    private final EncryptionService encryptionService;
     private final RoomMapper roomMapper;
 
     public RoomService(
             CurrentUserService currentUserService,
             HomeRepository homeRepository,
             RoomRepository roomRepository,
+            WindowDeviceRepository windowDeviceRepository,
+            PhysicalDeviceRegistryRepository physicalDeviceRegistryRepository,
             ThingsBoardProvisioningService thingsBoardProvisioningService,
+            ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService,
+            EncryptionService encryptionService,
             RoomMapper roomMapper
     ) {
         this.currentUserService = currentUserService;
         this.homeRepository = homeRepository;
         this.roomRepository = roomRepository;
+        this.windowDeviceRepository = windowDeviceRepository;
+        this.physicalDeviceRegistryRepository = physicalDeviceRegistryRepository;
         this.thingsBoardProvisioningService = thingsBoardProvisioningService;
+        this.thingsBoardTelemetryQueryService = thingsBoardTelemetryQueryService;
+        this.encryptionService = encryptionService;
         this.roomMapper = roomMapper;
     }
 
@@ -84,6 +110,9 @@ public class RoomService {
         );
         room.updateThingsBoardAsset(provisioned.tbAssetId());
         device.updateThingsBoardDevice(provisioned.tbDeviceId());
+        if (provisioned.tbDeviceAccessToken() != null && !provisioned.tbDeviceAccessToken().isBlank()) {
+            device.storeEncryptedThingsBoardDeviceToken(encryptionService.encrypt(provisioned.tbDeviceAccessToken()));
+        }
 
         return roomMapper.toResponse(room);
     }
@@ -103,10 +132,81 @@ public class RoomService {
     }
 
     @Transactional
+    public RoomResponse connectPhysicalDevice(UUID roomId, ConnectPhysicalDeviceRequest request) {
+        AppUser user = currentUserService.getOrCreateCurrentUser();
+        Room room = findOwnedRoom(roomId, user);
+        rejectIfRoomHasActivePhysicalDevice(room);
+
+        String deviceName = requiredTrimmed(request.name(), "Naziv uredjaja je obavezan.");
+        String tbDeviceId = requiredTrimmed(request.tbDeviceId(), "ThingsBoard Device ID je obavezan.");
+        String tbDeviceName = request.tbDeviceName() == null ? null : request.tbDeviceName().trim();
+
+        WindowDevice device = WindowDevice.physicalDevice(deviceName, tbDeviceId);
+        room.addDevice(device);
+        roomRepository.saveAndFlush(room);
+
+        thingsBoardProvisioningService.linkExistingPhysicalDevice(new ExistingPhysicalDeviceLinkRequest(
+                room.getId(),
+                room.getName(),
+                room.getTbAssetId(),
+                tbDeviceId,
+                deviceName,
+                tbDeviceName == null || tbDeviceName.isBlank() ? null : tbDeviceName,
+                user.getId(),
+                user.getAuth0Sub()
+        ));
+
+        return roomMapper.toResponse(room);
+    }
+
+    @Transactional
+    public RoomResponse pairPhysicalDevice(UUID roomId, PairPhysicalDeviceRequest request) {
+        AppUser user = currentUserService.getOrCreateCurrentUser();
+        Room room = findOwnedRoom(roomId, user);
+        rejectIfRoomHasActivePhysicalDevice(room);
+
+        String deviceName = requiredTrimmed(request.name(), "Naziv uredjaja je obavezan.");
+        String pairingCodeHash = PhysicalDevicePairingCodeHasher.hash(
+                requiredTrimmed(request.pairingCode(), "Kod za povezivanje je obavezan.")
+        );
+        PhysicalDeviceRegistry registryDevice = physicalDeviceRegistryRepository.findByPairingCodeHash(pairingCodeHash)
+                .orElseThrow(() -> new ResourceNotFoundException("Kod za povezivanje nije valjan."));
+
+        if (registryDevice.getStatus() == PhysicalDeviceRegistryStatus.CLAIMED) {
+            throw new ConflictException("Uredjaj je vec povezan.");
+        }
+        if (registryDevice.getStatus() == PhysicalDeviceRegistryStatus.DISABLED) {
+            throw new ConflictException("Uredjaj je deaktiviran.");
+        }
+        if (registryDevice.getStatus() != PhysicalDeviceRegistryStatus.AVAILABLE) {
+            throw new ConflictException("Uredjaj nije dostupan za povezivanje.");
+        }
+
+        WindowDevice device = WindowDevice.physicalDevice(deviceName, registryDevice.getTbDeviceId());
+        room.addDevice(device);
+        registryDevice.claim(user.getId(), room.getId());
+        roomRepository.saveAndFlush(room);
+
+        thingsBoardProvisioningService.linkExistingPhysicalDevice(new ExistingPhysicalDeviceLinkRequest(
+                room.getId(),
+                room.getName(),
+                room.getTbAssetId(),
+                registryDevice.getTbDeviceId(),
+                deviceName,
+                registryDevice.getSerialNumber(),
+                user.getId(),
+                user.getAuth0Sub()
+        ));
+
+        return roomMapper.toResponse(room);
+    }
+
+    @Transactional
     public void deleteRoom(UUID roomId) {
         AppUser user = currentUserService.getOrCreateCurrentUser();
         Room room = findOwnedRoom(roomId, user);
         room.getDevices().stream()
+                .filter(WindowDevice::isVirtual)
                 .findFirst()
                 .filter(device -> shouldDeprovision(room.getTbAssetId(), device.getTbDeviceId()))
                 .ifPresent(device -> thingsBoardProvisioningService.deprovisionVirtualRoom(
@@ -118,6 +218,54 @@ public class RoomService {
                         )
                 ));
         roomRepository.delete(room);
+    }
+
+    @Transactional(readOnly = true)
+    public RoomTelemetryResponse latestTelemetry(UUID roomId) {
+        AppUser user = currentUserService.getOrCreateCurrentUser();
+        Room room = findOwnedRoom(roomId, user);
+        WindowDevice device = telemetryDevice(room);
+
+        if (!isRealThingsBoardId(device.getTbDeviceId(), MOCK_THINGSBOARD_DEVICE_PREFIX)) {
+            return new RoomTelemetryResponse(
+                    room.getId(),
+                    room.getName(),
+                    device.getId(),
+                    device.getName(),
+                    Map.of(),
+                    null,
+                    "Telemetrija jos nije dostupna za mock ThingsBoard uredjaj."
+            );
+        }
+
+        ThingsBoardTelemetryQueryService.LatestTelemetry latest = thingsBoardTelemetryQueryService.latestDeviceTelemetry(device.getTbDeviceId());
+        return new RoomTelemetryResponse(
+                room.getId(),
+                room.getName(),
+                device.getId(),
+                device.getName(),
+                latest.telemetry(),
+                latest.updatedAt(),
+                latest.telemetry().isEmpty() ? "Telemetrija jos nije dostupna." : null
+        );
+    }
+
+    private WindowDevice telemetryDevice(Room room) {
+        return room.getDevices().stream()
+                .filter(device -> device.getDeviceType() == DeviceType.PHYSICAL)
+                .filter(device -> device.getStatus() == DeviceStatus.ACTIVE)
+                .findFirst()
+                .or(() -> room.getDevices().stream()
+                        .filter(device -> device.getDeviceType() == DeviceType.VIRTUAL)
+                        .filter(device -> device.getStatus() == DeviceStatus.ACTIVE)
+                        .findFirst())
+                .orElseThrow(() -> new ResourceNotFoundException("Aktivni uredjaj za sobu nije pronadjen."));
+    }
+
+    private void rejectIfRoomHasActivePhysicalDevice(Room room) {
+        if (windowDeviceRepository.existsByRoomIdAndDeviceTypeAndStatus(room.getId(), DeviceType.PHYSICAL, DeviceStatus.ACTIVE)) {
+            throw new ConflictException("Soba vec ima aktivni fizicki uredjaj.");
+        }
     }
 
     private Home findOrCreateDefaultHome(AppUser user) {
@@ -139,5 +287,12 @@ public class RoomService {
         return value != null && !value.isBlank()
                 && !PENDING_THINGSBOARD_ID.equals(value)
                 && !value.startsWith(mockPrefix);
+    }
+
+    private String requiredTrimmed(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        return value.trim();
     }
 }

@@ -1,6 +1,11 @@
 'use strict';
 
 const dom = {
+  topbar: document.querySelector('.topbar'),
+  appNav: document.querySelector('#appNav'),
+  loginView: document.querySelector('#loginView'),
+  dashboardView: document.querySelector('#dashboardView'),
+  roomsView: document.querySelector('#roomsView'),
   siteArea: document.querySelector('#siteArea'),
   siteName: document.querySelector('#siteName'),
   automationMode: document.querySelector('#automationMode'),
@@ -51,6 +56,7 @@ const dom = {
   eventList: document.querySelector('#eventList'),
   toast: document.querySelector('#toast'),
   loginLink: document.querySelector('#loginLink'),
+  loginCta: document.querySelector('#loginCta'),
   userName: document.querySelector('#userName'),
   logoutLink: document.querySelector('#logoutLink'),
   roomNameInput: document.querySelector('#roomNameInput'),
@@ -62,6 +68,14 @@ const dom = {
 let currentState = null;
 let toastTimer = null;
 let editingRoomId = null;
+let currentUser = null;
+let streamStarted = false;
+let roomsLoaded = false;
+let roomsCache = [];
+let roomTelemetry = new Map();
+let roomTelemetryPollTimer = null;
+let connectingPhysicalRoomId = null;
+let physicalConnectDeveloperMode = false;
 
 function formatPercent(value) {
   return `${Math.round(Number(value) || 0)}%`;
@@ -105,6 +119,9 @@ function showRoomsMessage(message, level = 'info') {
 }
 
 function setVisible(element, visible) {
+  if (!element) {
+    return;
+  }
   element.hidden = !visible;
   element.classList.toggle('is-hidden', !visible);
 }
@@ -112,15 +129,86 @@ function setVisible(element, visible) {
 function renderUser(user) {
   if (!user.authenticated) {
     setVisible(dom.loginLink, user.oidcEnabled);
+    setVisible(dom.loginCta, user.oidcEnabled);
     setVisible(dom.userName, false);
     setVisible(dom.logoutLink, false);
     return;
   }
 
   setVisible(dom.loginLink, false);
+  setVisible(dom.loginCta, false);
   dom.userName.textContent = user.email || user.name;
   setVisible(dom.userName, true);
   setVisible(dom.logoutLink, true);
+}
+
+function routeName() {
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  return hash === 'rooms' ? 'rooms' : hash === 'dashboard' ? 'dashboard' : '';
+}
+
+function setActiveRoute(route) {
+  document.querySelectorAll('[data-route-link]').forEach((link) => {
+    link.classList.toggle('is-active', link.dataset.routeLink === route);
+  });
+}
+
+async function ensureDashboardStarted() {
+  if (!currentState) {
+    render(await api('/api/state'));
+  }
+
+  if (!streamStarted) {
+    streamStarted = true;
+    startStream();
+  }
+}
+
+async function showRoute() {
+  if (!currentUser) {
+    return;
+  }
+
+  const authRequired = currentUser.oidcEnabled && !currentUser.authenticated;
+  if (authRequired) {
+    setVisible(dom.topbar, false);
+    setVisible(dom.loginView, true);
+    setVisible(dom.dashboardView, false);
+    setVisible(dom.roomsView, false);
+    setVisible(dom.appNav, false);
+    return;
+  }
+
+  setVisible(dom.topbar, true);
+  setVisible(dom.appNav, !authRequired);
+  setVisible(dom.loginView, false);
+
+  let route = routeName();
+  if (!route) {
+    window.location.hash = '#/dashboard';
+    route = 'dashboard';
+  }
+
+  setActiveRoute(route);
+  setVisible(dom.dashboardView, route === 'dashboard');
+  setVisible(dom.roomsView, route === 'rooms');
+
+  if (route !== 'rooms') {
+    stopRoomsTelemetryPolling();
+  }
+
+  if (route === 'dashboard') {
+    await ensureDashboardStarted();
+  }
+
+  if (route === 'rooms') {
+    if (!roomsLoaded) {
+      await loadRooms();
+    } else if (roomsCache.length > 0) {
+      await loadTelemetryForRooms();
+    }
+    startRoomsTelemetryPolling();
+  }
 }
 
 async function api(path, options = {}) {
@@ -147,9 +235,61 @@ function shortId(value) {
 }
 
 function roomErrorMessage(error) {
-  return error.message.includes('vec postoji') || error.message.includes('već postoji')
+  return error.message.includes('Soba s tim nazivom')
     ? 'Soba s tim nazivom već postoji.'
     : error.message;
+}
+
+function hasActivePhysicalDevice(room) {
+  return (room.devices || []).some((device) => device.deviceType === 'PHYSICAL' && device.status === 'ACTIVE');
+}
+
+function telemetryValue(telemetry, key, formatter = (value) => value) {
+  if (!telemetry || telemetry[key] === undefined || telemetry[key] === null || telemetry[key] === '') {
+    return '--';
+  }
+  return formatter(telemetry[key]);
+}
+
+function renderRoomTelemetry(room) {
+  const telemetryResponse = roomTelemetry.get(room.id);
+  const telemetry = telemetryResponse?.telemetry || {};
+  const section = document.createElement('section');
+  section.className = 'room-telemetry';
+
+  if (!telemetryResponse || Object.keys(telemetry).length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'form-message';
+    empty.textContent = telemetryResponse?.message || 'Telemetrija još nije dostupna.';
+    section.append(empty);
+    return section;
+  }
+
+  const rows = [
+    ['Kiša', telemetryValue(telemetry, 'rainDetected', (value) => value ? 'Pada' : 'Ne pada')],
+    ['Intenzitet kiše', telemetryValue(telemetry, 'rainIntensity', (value) => `${Math.round(Number(value))}`)],
+    ['Rizik kiše', telemetryValue(telemetry, 'rainRiskPercent', (value) => formatPercent(value))],
+    ['Svjetlo', telemetryValue(telemetry, 'lux', (value) => formatLux(value))],
+    ['Temperatura', telemetryValue(telemetry, 'indoorTempC', (value) => formatTemp(value))],
+    ['Vjetar', telemetryValue(telemetry, 'windKmh', (value) => `${Math.round(Number(value))} km/h`)],
+    ['Prozor', telemetryValue(telemetry, 'windowOpenPercent', (value) => formatPercent(value))],
+    ['Roleta', telemetryValue(telemetry, 'blindClosedPercent', (value) => formatPercent(value))]
+  ];
+
+  const grid = document.createElement('dl');
+  grid.className = 'telemetry-grid';
+  for (const [label, value] of rows) {
+    const item = document.createElement('div');
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const description = document.createElement('dd');
+    description.textContent = value;
+    item.append(term, description);
+    grid.append(item);
+  }
+
+  section.append(grid);
+  return section;
 }
 
 function renderRooms(rooms) {
@@ -184,6 +324,17 @@ function renderRooms(rooms) {
     editButton.textContent = 'Uredi';
     editButton.addEventListener('click', () => {
       editingRoomId = room.id;
+      connectingPhysicalRoomId = null;
+      renderRooms(rooms);
+    });
+    const connectButton = document.createElement('button');
+    connectButton.type = 'button';
+    connectButton.className = 'button-secondary';
+    connectButton.textContent = 'Poveži uređaj';
+    connectButton.disabled = hasActivePhysicalDevice(room);
+    connectButton.addEventListener('click', () => {
+      connectingPhysicalRoomId = room.id;
+      editingRoomId = null;
       renderRooms(rooms);
     });
     const deleteButton = document.createElement('button');
@@ -191,7 +342,7 @@ function renderRooms(rooms) {
     deleteButton.className = 'button-danger';
     deleteButton.textContent = 'Obriši';
     deleteButton.addEventListener('click', () => deleteRoom(room));
-    actions.append(editButton, deleteButton);
+    actions.append(editButton, connectButton, deleteButton);
     header.append(roomMeta, actions);
 
     if (editingRoomId === room.id) {
@@ -223,6 +374,50 @@ function renderRooms(rooms) {
       editForm.append(nameInput, saveButton, cancelButton);
       item.append(header, editForm);
       setTimeout(() => nameInput.focus(), 0);
+    } else if (connectingPhysicalRoomId === room.id) {
+      const connectForm = document.createElement('div');
+      connectForm.className = 'physical-connect';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.maxLength = 120;
+      nameInput.placeholder = 'ESP32 - Fizički prototip';
+      nameInput.setAttribute('aria-label', 'Naziv fizičkog uređaja');
+      const pairingCodeInput = document.createElement('input');
+      pairingCodeInput.type = 'text';
+      pairingCodeInput.maxLength = physicalConnectDeveloperMode ? 128 : 64;
+      pairingCodeInput.placeholder = physicalConnectDeveloperMode ? 'ThingsBoard Device ID' : 'Kod za povezivanje';
+      pairingCodeInput.setAttribute('aria-label', physicalConnectDeveloperMode ? 'ThingsBoard Device ID' : 'Kod za povezivanje');
+      const saveButton = document.createElement('button');
+      saveButton.type = 'button';
+      saveButton.className = 'button-secondary';
+      saveButton.textContent = 'Poveži';
+      saveButton.addEventListener('click', () => connectPhysicalDevice(room.id, nameInput.value, pairingCodeInput.value));
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.textContent = 'Odustani';
+      cancelButton.addEventListener('click', () => {
+        connectingPhysicalRoomId = null;
+        renderRooms(rooms);
+      });
+      const developerButton = document.createElement('button');
+      developerButton.type = 'button';
+      developerButton.className = 'button-secondary';
+      developerButton.textContent = physicalConnectDeveloperMode ? 'Korisnički kod' : 'Developer ID';
+      developerButton.addEventListener('click', () => {
+        physicalConnectDeveloperMode = !physicalConnectDeveloperMode;
+        renderRooms(rooms);
+      });
+      for (const input of [nameInput, pairingCodeInput]) {
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            connectPhysicalDevice(room.id, nameInput.value, pairingCodeInput.value);
+          }
+        });
+      }
+      connectForm.append(nameInput, pairingCodeInput, saveButton, cancelButton, developerButton);
+      item.append(header, connectForm);
+      setTimeout(() => nameInput.focus(), 0);
     } else {
       item.append(header);
     }
@@ -240,16 +435,56 @@ function renderRooms(rooms) {
     }
 
     item.append(devices);
+    item.append(renderRoomTelemetry(room));
     dom.roomsList.append(item);
   }
 }
 
 async function loadRooms(announce = true) {
   const rooms = await api('/api/rooms');
+  roomsCache = rooms;
   renderRooms(rooms);
+  await loadTelemetryForRooms(rooms);
+  roomsLoaded = true;
   if (announce && rooms.length > 0) {
     showRoomsMessage(`${rooms.length} soba ucitano.`);
   }
+}
+
+async function loadTelemetryForRooms(rooms = roomsCache) {
+  await Promise.all(rooms.map(async (room) => {
+    try {
+      const telemetry = await api(`/api/rooms/${room.id}/telemetry/latest`);
+      roomTelemetry.set(room.id, telemetry);
+    } catch (error) {
+      roomTelemetry.set(room.id, {
+        telemetry: {},
+        message: error.message || 'Telemetrija još nije dostupna.'
+      });
+    }
+  }));
+  renderRooms(rooms);
+}
+
+function startRoomsTelemetryPolling() {
+  if (roomTelemetryPollTimer) {
+    return;
+  }
+
+  roomTelemetryPollTimer = setInterval(() => {
+    if (routeName() === 'rooms' && roomsCache.length > 0) {
+      loadTelemetryForRooms().catch((error) => showRoomsMessage(error.message, 'error'));
+    }
+  }, 5000);
+}
+
+function stopRoomsTelemetryPolling() {
+  if (!roomTelemetryPollTimer) {
+    return;
+  }
+
+  clearInterval(roomTelemetryPollTimer);
+  roomTelemetryPollTimer = null;
 }
 
 async function addRoom() {
@@ -293,6 +528,36 @@ async function updateRoom(roomId, rawName) {
   }
 }
 
+async function connectPhysicalDevice(roomId, rawName, rawTbDeviceId) {
+  const name = rawName.trim();
+  const deviceIdentifier = rawTbDeviceId.trim();
+  if (!name || !deviceIdentifier) {
+    showRoomsMessage(physicalConnectDeveloperMode
+      ? 'Naziv uređaja i ThingsBoard Device ID su obavezni.'
+      : 'Naziv uređaja i kod za povezivanje su obavezni.', 'error');
+    return;
+  }
+
+  try {
+    const path = physicalConnectDeveloperMode
+      ? `/api/rooms/${roomId}/devices/physical`
+      : `/api/rooms/${roomId}/devices/pair`;
+    const body = physicalConnectDeveloperMode
+      ? { name, tbDeviceId: deviceIdentifier }
+      : { name, pairingCode: deviceIdentifier };
+    await api(path, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    connectingPhysicalRoomId = null;
+    physicalConnectDeveloperMode = false;
+    await loadRooms(false);
+    showRoomsMessage('Fizički uređaj je povezan.');
+  } catch (error) {
+    showRoomsMessage(roomErrorMessage(error), 'error');
+  }
+}
+
 async function deleteRoom(room) {
   if (!window.confirm(`Obrisati sobu "${room.name}"?`)) {
     return;
@@ -304,6 +569,9 @@ async function deleteRoom(room) {
     });
     if (editingRoomId === room.id) {
       editingRoomId = null;
+    }
+    if (connectingPhysicalRoomId === room.id) {
+      connectingPhysicalRoomId = null;
     }
     await loadRooms(false);
     showRoomsMessage('Soba je obrisana.');
@@ -527,15 +795,12 @@ function startStream() {
 async function boot() {
   bindControls();
   try {
-    const user = await api('/api/me');
-    renderUser(user);
-    if (user.oidcEnabled && !user.authenticated) {
-      return;
-    }
-
-    render(await api('/api/state'));
-    await loadRooms();
-    startStream();
+    currentUser = await api('/api/me');
+    renderUser(currentUser);
+    window.addEventListener('hashchange', () => {
+      showRoute().catch((error) => showToast(error.message));
+    });
+    await showRoute();
   } catch (error) {
     showToast(error.message);
   }

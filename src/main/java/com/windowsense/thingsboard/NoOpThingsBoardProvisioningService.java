@@ -13,7 +13,8 @@ public class NoOpThingsBoardProvisioningService implements ThingsBoardProvisioni
     public ProvisionedRoomDevice provisionVirtualRoomDevice(VirtualRoomProvisioningRequest request) {
         return new ProvisionedRoomDevice(
                 "tb-asset-" + UUID.randomUUID(),
-                "tb-device-" + UUID.randomUUID()
+                "tb-device-" + UUID.randomUUID(),
+                null
         );
     }
 }
