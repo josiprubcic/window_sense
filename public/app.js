@@ -17,17 +17,15 @@ const dom = {
   rainDetail: document.querySelector('#rainDetail'),
   lightValue: document.querySelector('#lightValue'),
   lightDetail: document.querySelector('#lightDetail'),
-  windowValue: document.querySelector('#windowValue'),
-  windowDetail: document.querySelector('#windowDetail'),
-  blindsValue: document.querySelector('#blindsValue'),
-  blindsDetail: document.querySelector('#blindsDetail'),
+  windValue: document.querySelector('#windValue'),
+  windDetail: document.querySelector('#windDetail'),
   weatherLine: document.querySelector('#weatherLine'),
-  summaryWindowPercent: document.querySelector('#summaryWindowPercent'),
-  summaryWindowOpen: document.querySelector('#summaryWindowOpen'),
-  summaryBlindsPercent: document.querySelector('#summaryBlindsPercent'),
-  summaryBlindsDown: document.querySelector('#summaryBlindsDown'),
   summaryRain: document.querySelector('#summaryRain'),
+  summaryRainRisk: document.querySelector('#summaryRainRisk'),
+  summaryLight: document.querySelector('#summaryLight'),
+  summaryTemp: document.querySelector('#summaryTemp'),
   summaryWind: document.querySelector('#summaryWind'),
+  dashboardDeviceStates: document.querySelector('#dashboardDeviceStates'),
   autoModeButton: document.querySelector('#autoModeButton'),
   manualModeButton: document.querySelector('#manualModeButton'),
   dashboardDeviceSelect: document.querySelector('#dashboardDeviceSelect'),
@@ -393,6 +391,84 @@ function telemetryValue(telemetry, key, formatter = (value) => value) {
   return formatter(telemetry[key]);
 }
 
+function deviceTelemetryItems(device) {
+  const telemetry = device?.telemetry || {};
+  const items = [];
+  if (deviceSupportsTarget(device, 'window')) {
+    const windowOpen = telemetryValue(telemetry, 'windowOpenPercent', (value) => Number(value));
+    items.push(['Otvorenost prozora', windowOpen === '--' ? '--' : formatPercent(windowOpen)]);
+    items.push(['Prozor otvoren', windowOpen === '--' ? '--' : windowOpen > 0 ? 'Da' : 'Ne']);
+  }
+  if (deviceSupportsTarget(device, 'blinds')) {
+    const blindClosed = telemetryValue(telemetry, 'blindClosedPercent', (value) => Number(value));
+    items.push(['Spuštenost rolete', blindClosed === '--' ? '--' : formatPercent(blindClosed)]);
+    items.push(['Roleta spuštena', blindClosed === '--' ? '--' : blindClosed > 0 ? 'Da' : 'Ne']);
+  }
+  return items;
+}
+
+function renderDashboardDeviceStates(room, telemetryResponse) {
+  dom.dashboardDeviceStates.innerHTML = '';
+  const telemetryDevices = Array.isArray(telemetryResponse?.devices) ? telemetryResponse.devices : [];
+  const roomDevicesById = new Map((room?.devices || []).map((device) => [device.id, device]));
+  const devices = telemetryDevices.length > 0
+    ? telemetryDevices
+    : orderedDevices(room || {}).map((device) => ({ ...device, deviceId: device.id, deviceName: device.name, telemetry: {} }));
+
+  if (devices.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'form-message';
+    empty.textContent = 'Soba nema povezanih uređaja.';
+    dom.dashboardDeviceStates.append(empty);
+    return;
+  }
+
+  for (const telemetryDevice of devices) {
+    const roomDevice = roomDevicesById.get(telemetryDevice.deviceId) || {};
+    const device = {
+      ...roomDevice,
+      ...telemetryDevice,
+      id: telemetryDevice.deviceId || roomDevice.id,
+      name: telemetryDevice.deviceName || roomDevice.name,
+      capabilities: telemetryDevice.capabilities || roomDevice.capabilities || []
+    };
+    const card = document.createElement('article');
+    card.className = 'dashboard-device-state';
+
+    const header = document.createElement('header');
+    const title = document.createElement('strong');
+    title.textContent = device.name || 'Uređaj';
+    const meta = document.createElement('span');
+    meta.textContent = `${device.deviceType === 'PHYSICAL' ? 'Fizički' : 'Virtualni'} / ${deviceKindLabel(device)}`;
+    header.append(title, meta);
+
+    const grid = document.createElement('dl');
+    grid.className = 'device-state-grid';
+    const stateItems = deviceTelemetryItems(device);
+    if (stateItems.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'form-message';
+      empty.textContent = 'Ovaj uređaj nema stanje prozora ili rolete.';
+      card.append(header, empty);
+      dom.dashboardDeviceStates.append(card);
+      continue;
+    }
+
+    for (const [label, value] of stateItems) {
+      const item = document.createElement('div');
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const description = document.createElement('dd');
+      description.textContent = value;
+      item.append(term, description);
+      grid.append(item);
+    }
+
+    card.append(header, grid);
+    dom.dashboardDeviceStates.append(card);
+  }
+}
+
 function renderRoomTelemetry(room) {
   const telemetryResponse = roomTelemetry.get(room.id);
   const telemetry = telemetryResponse?.telemetry || {};
@@ -715,12 +791,20 @@ function renderRooms(rooms) {
     }
     for (const device of roomDevices) {
       const deviceRow = document.createElement('div');
+      deviceRow.className = 'device-row';
+      const deviceInfo = document.createElement('div');
       const deviceName = document.createElement('strong');
       deviceName.textContent = device.name;
       const meta = document.createElement('span');
       const deviceTypeLabel = device.deviceType === 'PHYSICAL' ? 'Fizički' : 'Virtualni';
       meta.textContent = `${deviceTypeLabel} / ${device.status} / ${deviceKindLabel(device)}`;
-      deviceRow.append(deviceName, meta);
+      deviceInfo.append(deviceName, meta);
+      const deviceDeleteButton = document.createElement('button');
+      deviceDeleteButton.type = 'button';
+      deviceDeleteButton.className = 'button-danger';
+      deviceDeleteButton.textContent = 'Obriši uređaj';
+      deviceDeleteButton.addEventListener('click', () => deleteRoomDevice(room, device));
+      deviceRow.append(deviceInfo, deviceDeleteButton);
       devices.append(deviceRow);
     }
 
@@ -1209,6 +1293,28 @@ async function deleteRoom(room) {
   }
 }
 
+async function deleteRoomDevice(room, device) {
+  if (!window.confirm(`Obrisati uređaj "${device.name}" iz sobe "${room.name}"?`)) {
+    return;
+  }
+
+  try {
+    await api(`/api/rooms/${room.id}/devices/${device.id}`, {
+      method: 'DELETE'
+    });
+    selectedDashboardDeviceIdByRoom.delete(room.id);
+    roomTelemetry.delete(room.id);
+    await loadRooms(false);
+    renderDashboardRoomOptions();
+    if (selectedDashboardRoomId === room.id) {
+      await loadSelectedDashboardRoomTelemetry();
+    }
+    showRoomsMessage('Uređaj je obrisan iz sobe.');
+  } catch (error) {
+    showRoomsMessage(roomErrorMessage(error), 'error');
+  }
+}
+
 function setStatusClass(element, status) {
   element.classList.remove('status-pill--neutral', 'status-pill--error');
   if (status === 'error') {
@@ -1262,17 +1368,15 @@ function renderDashboardPlaceholders(room, message) {
   dom.lightDetail.textContent = '--';
   dom.tempValue.textContent = '--';
   dom.tempDetail.textContent = '--';
-  dom.windowValue.textContent = '--';
-  dom.windowDetail.textContent = '--';
-  dom.blindsValue.textContent = '--';
-  dom.blindsDetail.textContent = '--';
+  dom.windValue.textContent = '--';
+  dom.windDetail.textContent = '--';
 
-  dom.summaryWindowPercent.textContent = '--';
-  dom.summaryWindowOpen.textContent = '--';
-  dom.summaryBlindsPercent.textContent = '--';
-  dom.summaryBlindsDown.textContent = '--';
   dom.summaryRain.textContent = '--';
+  dom.summaryRainRisk.textContent = '--';
+  dom.summaryLight.textContent = '--';
+  dom.summaryTemp.textContent = '--';
   dom.summaryWind.textContent = '--';
+  renderDashboardDeviceStates(room, null);
 
   dom.iotPlatform.textContent = '--';
   dom.deviceId.textContent = '--';
@@ -1287,8 +1391,12 @@ function renderDashboardPlaceholders(room, message) {
 function renderDashboardTelemetry(room, telemetryResponse, options = {}) {
   const { syncControls = true } = options;
   const dashboardTelemetry = selectedDashboardTelemetry(room, telemetryResponse);
-  const telemetry = dashboardTelemetry?.telemetry || {};
-  if (Object.keys(telemetry).length === 0) {
+  const controlTelemetry = dashboardTelemetry?.telemetry || {};
+  const telemetry = telemetryResponse?.aggregated && Object.keys(telemetryResponse.aggregated).length > 0
+    ? telemetryResponse.aggregated
+    : controlTelemetry;
+  renderDashboardDeviceStates(room, telemetryResponse);
+  if (Object.keys(telemetry).length === 0 && Object.keys(controlTelemetry).length === 0) {
     renderDashboardPlaceholders(room, dashboardTelemetry?.message);
     return;
   }
@@ -1300,8 +1408,6 @@ function renderDashboardTelemetry(room, telemetryResponse, options = {}) {
   const lux = Number(telemetry.lux) || 0;
   const indoorTemp = Number(telemetry.indoorTempC) || 0;
   const wind = Number(telemetry.windKmh) || 0;
-  const windowOpen = Number(telemetry.windowOpenPercent) || 0;
-  const blindClosed = Number(telemetry.blindClosedPercent) || 0;
 
   dom.siteArea.textContent = 'Soba';
   dom.siteName.textContent = room.name;
@@ -1315,16 +1421,13 @@ function renderDashboardTelemetry(room, telemetryResponse, options = {}) {
   dom.lightDetail.textContent = 'Telemetrija sobe';
   dom.tempValue.textContent = formatTemp(indoorTemp);
   dom.tempDetail.textContent = 'Telemetrija sobe';
-  dom.windowValue.textContent = formatPercent(windowOpen);
-  dom.windowDetail.textContent = 'Zadnja telemetrija';
-  dom.blindsValue.textContent = formatPercent(blindClosed);
-  dom.blindsDetail.textContent = '0% gore / 100% dolje';
+  dom.windValue.textContent = `${Math.round(wind)} km/h`;
+  dom.windDetail.textContent = 'Telemetrija sobe';
 
-  dom.summaryWindowPercent.textContent = formatPercent(windowOpen);
-  dom.summaryWindowOpen.textContent = windowOpen > 0 ? 'Da' : 'Ne';
-  dom.summaryBlindsPercent.textContent = formatPercent(blindClosed);
-  dom.summaryBlindsDown.textContent = blindClosed > 0 ? 'Da' : 'Ne';
   dom.summaryRain.textContent = rainDetected ? 'Pada' : 'Ne pada';
+  dom.summaryRainRisk.textContent = formatPercent(rainRisk);
+  dom.summaryLight.textContent = formatLux(lux);
+  dom.summaryTemp.textContent = formatTemp(indoorTemp);
   dom.summaryWind.textContent = `${Math.round(wind)} km/h`;
 
   dom.iotPlatform.textContent = isVirtual ? 'Simulacija' : 'ThingsBoard';
@@ -1338,7 +1441,7 @@ function renderDashboardTelemetry(room, telemetryResponse, options = {}) {
   dom.iotStatus.textContent = isVirtual ? 'simulacija' : formatConnectionStatus('physical');
   setStatusClass(dom.iotStatus, isVirtual ? 'configured' : 'connected');
   if (syncControls) {
-    syncRoomDashboardInputs(telemetry);
+    syncRoomDashboardInputs(Object.keys(controlTelemetry).length > 0 ? controlTelemetry : telemetry);
     const selectedRoom = selectedDashboardRoom();
     if (selectedRoom) {
       setRoomSimulationUi(selectedRoom);

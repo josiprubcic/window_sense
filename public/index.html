@@ -61,15 +61,10 @@
             <strong id="tempValue">--</strong>
             <small id="tempDetail">--</small>
           </article>
-          <article class="metric metric--window">
-            <span class="metric__label">Prozor</span>
-            <strong id="windowValue">--</strong>
-            <small id="windowDetail">--</small>
-          </article>
-          <article class="metric metric--blinds">
-            <span class="metric__label">Rolete</span>
-            <strong id="blindsValue">--</strong>
-            <small id="blindsDetail">--</small>
+          <article class="metric metric--wind">
+            <span class="metric__label">Vjetar</span>
+            <strong id="windValue">--</strong>
+            <small id="windDetail">--</small>
           </article>
           </section>
 
@@ -84,24 +79,20 @@
 
             <dl class="status-grid" aria-label="Sažetak stanja prozora, zastora i vremena">
               <div class="status-item">
-                <dt>Otvorenost prozora</dt>
-                <dd id="summaryWindowPercent">--</dd>
-              </div>
-              <div class="status-item">
-                <dt>Prozor otvoren</dt>
-                <dd id="summaryWindowOpen">--</dd>
-              </div>
-              <div class="status-item">
-                <dt>Spuštenost zastora</dt>
-                <dd id="summaryBlindsPercent">--</dd>
-              </div>
-              <div class="status-item">
-                <dt>Zastor spušten</dt>
-                <dd id="summaryBlindsDown">--</dd>
-              </div>
-              <div class="status-item">
                 <dt>Kiša</dt>
                 <dd id="summaryRain">--</dd>
+              </div>
+              <div class="status-item">
+                <dt>Rizik kiše</dt>
+                <dd id="summaryRainRisk">--</dd>
+              </div>
+              <div class="status-item">
+                <dt>Svjetlost</dt>
+                <dd id="summaryLight">--</dd>
+              </div>
+              <div class="status-item">
+                <dt>Temperatura</dt>
+                <dd id="summaryTemp">--</dd>
               </div>
               <div class="status-item">
                 <dt>Vjetar</dt>
@@ -183,6 +174,11 @@
               </label>
             </section>
           </aside>
+          </section>
+
+          <section class="dashboard-device-section panel-section">
+            <h2>Stanja uređaja</h2>
+            <div id="dashboardDeviceStates" class="dashboard-device-states"></div>
           </section>
 
           <section class="lower-grid">
