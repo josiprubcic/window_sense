@@ -6,6 +6,8 @@ const dom = {
   loginView: document.querySelector('#loginView'),
   dashboardView: document.querySelector('#dashboardView'),
   roomsView: document.querySelector('#roomsView'),
+  dashboardRoomSelect: document.querySelector('#dashboardRoomSelect'),
+  dashboardSource: document.querySelector('#dashboardSource'),
   siteArea: document.querySelector('#siteArea'),
   siteName: document.querySelector('#siteName'),
   automationMode: document.querySelector('#automationMode'),
@@ -28,6 +30,7 @@ const dom = {
   summaryWind: document.querySelector('#summaryWind'),
   autoModeButton: document.querySelector('#autoModeButton'),
   manualModeButton: document.querySelector('#manualModeButton'),
+  dashboardDeviceSelect: document.querySelector('#dashboardDeviceSelect'),
   windowSlider: document.querySelector('#windowSlider'),
   windowSliderValue: document.querySelector('#windowSliderValue'),
   blindsSlider: document.querySelector('#blindsSlider'),
@@ -43,6 +46,11 @@ const dom = {
   temperatureInputValue: document.querySelector('#temperatureInputValue'),
   tempValue: document.querySelector('#tempValue'),
   tempDetail: document.querySelector('#tempDetail'),
+  controlsPanel: document.querySelector('#controlsPanel'),
+  simulationPanel: document.querySelector('#simulationPanel'),
+  automationPanel: document.querySelector('#automationPanel'),
+  simulationAutoButton: document.querySelector('#simulationAutoButton'),
+  simulationManualButton: document.querySelector('#simulationManualButton'),
   applyTelemetryButton: document.querySelector('#applyTelemetryButton'),
   saveThresholdsButton: document.querySelector('#saveThresholdsButton'),
   thresholdRain: document.querySelector('#thresholdRain'),
@@ -65,17 +73,26 @@ const dom = {
   roomsList: document.querySelector('#roomsList')
 };
 
-let currentState = null;
 let toastTimer = null;
 let editingRoomId = null;
 let currentUser = null;
-let streamStarted = false;
 let roomsLoaded = false;
 let roomsCache = [];
 let roomTelemetry = new Map();
 let roomTelemetryPollTimer = null;
+let dashboardTelemetryPollTimer = null;
+let dashboardEventsPollTimer = null;
+let selectedDashboardRoomId = null;
+let selectedDashboardDeviceIdByRoom = new Map();
+let currentRoomSimulation = null;
+let currentRoomThresholds = null;
 let connectingPhysicalRoomId = null;
 let physicalConnectDeveloperMode = false;
+const DEVICE_KIND_OPTIONS = [
+  { value: 'window', label: 'Prozor' },
+  { value: 'blinds', label: 'Roleta' },
+  { value: 'combined', label: 'Prozor + roleta' }
+];
 
 function formatPercent(value) {
   return `${Math.round(Number(value) || 0)}%`;
@@ -104,6 +121,18 @@ function formatDate(value) {
     minute: '2-digit',
     second: '2-digit'
   }).format(new Date(value));
+}
+
+function formatConnectionStatus(status) {
+  const labels = {
+    connected: 'povezano',
+    configured: 'konfigurirano',
+    not_configured: 'nije konfigurirano',
+    error: 'greška',
+    physical: 'fizički',
+    no_telemetry: 'nema telemetrije'
+  };
+  return labels[status] || String(status || '--').replaceAll('_', ' ');
 }
 
 function showToast(message) {
@@ -154,14 +183,30 @@ function setActiveRoute(route) {
 }
 
 async function ensureDashboardStarted() {
-  if (!currentState) {
-    render(await api('/api/state'));
+  await ensureRoomsLoaded(false);
+  renderDashboardRoomOptions();
+  await loadEvents();
+  startDashboardEventsPolling();
+
+  if (selectedDashboardRoomId && roomsCache.some((room) => room.id === selectedDashboardRoomId)) {
+    dom.dashboardRoomSelect.value = selectedDashboardRoomId;
+    await loadSelectedDashboardRoomTelemetry();
+    startDashboardTelemetryPolling();
+    return;
   }
 
-  if (!streamStarted) {
-    streamStarted = true;
-    startStream();
+  if (roomsCache.length > 0) {
+    selectedDashboardRoomId = roomsCache[0].id;
+    dom.dashboardRoomSelect.value = selectedDashboardRoomId;
+    await loadSelectedDashboardRoomTelemetry();
+    startDashboardTelemetryPolling();
+    return;
   }
+
+  selectedDashboardRoomId = null;
+  renderDashboardPlaceholders(null, 'Nema soba. Prvo dodajte sobu.');
+  setDashboardControlsEnabled(false);
+  setVisible(dom.simulationPanel, false);
 }
 
 async function showRoute() {
@@ -185,13 +230,18 @@ async function showRoute() {
 
   let route = routeName();
   if (!route) {
-    window.location.hash = '#/dashboard';
-    route = 'dashboard';
+    window.location.hash = '#/rooms';
+    route = 'rooms';
   }
 
   setActiveRoute(route);
   setVisible(dom.dashboardView, route === 'dashboard');
   setVisible(dom.roomsView, route === 'rooms');
+
+  if (route !== 'dashboard') {
+    stopDashboardTelemetryPolling();
+    stopDashboardEventsPolling();
+  }
 
   if (route !== 'rooms') {
     stopRoomsTelemetryPolling();
@@ -224,7 +274,7 @@ async function api(path, options = {}) {
     const validationMessage = typeof data === 'object' && data !== null
       ? Object.values(data).find((value) => typeof value === 'string')
       : null;
-    throw new Error(data.error || validationMessage || 'API zahtjev nije uspio.');
+    throw new Error(apiErrorMessage(data.error || validationMessage || 'API zahtjev nije uspio.'));
   }
 
   return data;
@@ -240,8 +290,100 @@ function roomErrorMessage(error) {
     : error.message;
 }
 
+function apiErrorMessage(message) {
+  const mapped = {
+    MULTIPLE_DEVICES_FOR_CAPABILITY: 'Više uređaja u sobi podržava tu komandu. Odaberite uređaj za komande.',
+    DEVICE_DOES_NOT_SUPPORT_CAPABILITY: 'Odabrani uređaj ne podržava tu komandu.',
+    NO_DEVICE_FOR_CAPABILITY: 'Soba nema aktivni uređaj koji podržava tu komandu.'
+  };
+  return mapped[message] || message;
+}
+
 function hasActivePhysicalDevice(room) {
   return (room.devices || []).some((device) => device.deviceType === 'PHYSICAL' && device.status === 'ACTIVE');
+}
+
+function hasActiveControllableDevice(room) {
+  return (room.devices || []).some((device) => device.status === 'ACTIVE'
+    && (device.deviceType === 'PHYSICAL' || device.deviceType === 'VIRTUAL'));
+}
+
+function hasActiveVirtualDevice(room) {
+  return (room.devices || []).some((device) => device.deviceType === 'VIRTUAL' && device.status === 'ACTIVE');
+}
+
+function deviceSupportsTarget(device, target) {
+  const capabilities = device?.capabilities || [];
+  if (target === 'window') {
+    return capabilities.includes('WINDOW_CONTROL');
+  }
+  if (target === 'blinds') {
+    return capabilities.includes('BLINDS_CONTROL');
+  }
+  return false;
+}
+
+function selectedDeviceCapabilities(kind) {
+  if (kind === 'window') {
+    return ['window'];
+  }
+  if (kind === 'blinds') {
+    return ['blinds'];
+  }
+  return ['window', 'blinds'];
+}
+
+function createDeviceKindSelect() {
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', 'Tip uređaja');
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Tip uređaja';
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  select.append(placeholder);
+  for (const option of DEVICE_KIND_OPTIONS) {
+    const item = document.createElement('option');
+    item.value = option.value;
+    item.textContent = option.label;
+    select.append(item);
+  }
+  return select;
+}
+
+function deviceKindLabel(device) {
+  const capabilities = device?.capabilities || [];
+  const supportsWindow = capabilities.includes('WINDOW_CONTROL');
+  const supportsBlinds = capabilities.includes('BLINDS_CONTROL');
+  if (supportsWindow && supportsBlinds) {
+    return 'Prozor + roleta';
+  }
+  if (supportsWindow) {
+    return 'Prozor';
+  }
+  if (supportsBlinds) {
+    return 'Roleta';
+  }
+  return 'Senzorski uređaj';
+}
+
+function orderedDevices(room) {
+  return [...(room.devices || [])].sort((left, right) => {
+    const leftPhysical = left.deviceType === 'PHYSICAL' && left.status === 'ACTIVE';
+    const rightPhysical = right.deviceType === 'PHYSICAL' && right.status === 'ACTIVE';
+    if (leftPhysical !== rightPhysical) {
+      return leftPhysical ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name, 'hr');
+  });
+}
+
+function commandDevices(room) {
+  if (!room) {
+    return [];
+  }
+  return orderedDevices(room).filter((device) => device.status === 'ACTIVE'
+    && (deviceSupportsTarget(device, 'window') || deviceSupportsTarget(device, 'blinds')));
 }
 
 function telemetryValue(telemetry, key, formatter = (value) => value) {
@@ -256,6 +398,7 @@ function renderRoomTelemetry(room) {
   const telemetry = telemetryResponse?.telemetry || {};
   const section = document.createElement('section');
   section.className = 'room-telemetry';
+  section.dataset.roomTelemetryId = room.id;
 
   if (!telemetryResponse || Object.keys(telemetry).length === 0) {
     const empty = document.createElement('p');
@@ -264,6 +407,12 @@ function renderRoomTelemetry(room) {
     section.append(empty);
     return section;
   }
+
+  const source = document.createElement('p');
+  source.className = 'telemetry-source';
+  source.textContent = telemetryResponse.isVirtual
+    ? `Izvor: ${telemetryResponse.deviceName} / simulacija`
+    : `Izvor: ${telemetryResponse.deviceName} / fizički ESP32`;
 
   const rows = [
     ['Kiša', telemetryValue(telemetry, 'rainDetected', (value) => value ? 'Pada' : 'Ne pada')],
@@ -288,8 +437,108 @@ function renderRoomTelemetry(room) {
     grid.append(item);
   }
 
-  section.append(grid);
+  section.append(source, grid);
   return section;
+}
+
+function renderDashboardRoomOptions() {
+  dom.dashboardRoomSelect.innerHTML = '';
+  for (const room of roomsCache) {
+    const option = document.createElement('option');
+    option.value = room.id;
+    option.textContent = room.activeDevice ? `Soba: ${room.name}` : `Soba: ${room.name} (bez uredjaja)`;
+    dom.dashboardRoomSelect.append(option);
+  }
+  dom.dashboardRoomSelect.disabled = roomsCache.length === 0;
+
+  if (selectedDashboardRoomId && roomsCache.some((room) => room.id === selectedDashboardRoomId)) {
+    dom.dashboardRoomSelect.value = selectedDashboardRoomId;
+  } else if (roomsCache.length > 0) {
+    selectedDashboardRoomId = roomsCache[0].id;
+    dom.dashboardRoomSelect.value = selectedDashboardRoomId;
+  } else {
+    selectedDashboardRoomId = null;
+  }
+  renderDashboardDeviceOptions();
+}
+
+function renderDashboardDeviceOptions() {
+  const room = selectedDashboardRoom();
+  const selectedDeviceId = selectedDashboardDeviceId(room);
+  dom.dashboardDeviceSelect.innerHTML = '';
+
+  const automatic = document.createElement('option');
+  automatic.value = '';
+  automatic.textContent = 'Automatski';
+  dom.dashboardDeviceSelect.append(automatic);
+
+  const devices = room ? commandDevices(room) : [];
+  for (const device of devices) {
+    const option = document.createElement('option');
+    option.value = device.id;
+    option.textContent = `${device.name} (${device.deviceType})`;
+    dom.dashboardDeviceSelect.append(option);
+  }
+
+  dom.dashboardDeviceSelect.value = selectedDeviceId;
+  dom.dashboardDeviceSelect.disabled = devices.length === 0;
+}
+
+function selectedDashboardDeviceId(room = selectedDashboardRoom()) {
+  if (!room) {
+    return '';
+  }
+  const devices = commandDevices(room);
+  const selectedDeviceId = selectedDashboardDeviceIdByRoom.get(room.id) || '';
+  if (!selectedDeviceId) {
+    return '';
+  }
+  if (devices.some((device) => device.id === selectedDeviceId)) {
+    return selectedDeviceId;
+  }
+  selectedDashboardDeviceIdByRoom.delete(room.id);
+  return '';
+}
+
+function selectedDashboardTelemetry(room, telemetryResponse) {
+  const selectedDeviceId = selectedDashboardDeviceId(room);
+  if (!selectedDeviceId || !Array.isArray(telemetryResponse?.devices)) {
+    return telemetryResponse;
+  }
+
+  const selectedDevice = telemetryResponse.devices.find((device) => device.deviceId === selectedDeviceId);
+  if (!selectedDevice) {
+    return telemetryResponse;
+  }
+
+  const hasTelemetry = selectedDevice.telemetry && Object.keys(selectedDevice.telemetry).length > 0;
+  return {
+    ...telemetryResponse,
+    deviceId: selectedDevice.deviceId,
+    deviceName: selectedDevice.deviceName,
+    deviceType: selectedDevice.deviceType,
+    isVirtual: selectedDevice.isVirtual,
+    telemetry: selectedDevice.telemetry || {},
+    updatedAt: selectedDevice.updatedAt || telemetryResponse.updatedAt,
+    status: hasTelemetry ? 'AVAILABLE' : 'UNAVAILABLE',
+    code: hasTelemetry ? null : 'NO_TELEMETRY',
+    message: hasTelemetry ? null : `${selectedDevice.deviceName} još nema telemetriju.`
+  };
+}
+
+function updateRenderedRoomTelemetry(rooms) {
+  for (const room of rooms) {
+    const current = dom.roomsList.querySelector(`[data-room-telemetry-id="${room.id}"]`);
+    if (current) {
+      current.replaceWith(renderRoomTelemetry(room));
+    }
+  }
+}
+
+async function ensureRoomsLoaded(announce = true) {
+  if (!roomsLoaded) {
+    await loadRooms(announce);
+  }
 }
 
 function renderRooms(rooms) {
@@ -298,7 +547,7 @@ function renderRooms(rooms) {
   if (rooms.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'form-message';
-    empty.textContent = 'Jos nema dodanih soba.';
+    empty.textContent = 'Još nema dodanih soba.';
     dom.roomsList.append(empty);
     return;
   }
@@ -330,19 +579,29 @@ function renderRooms(rooms) {
     const connectButton = document.createElement('button');
     connectButton.type = 'button';
     connectButton.className = 'button-secondary';
-    connectButton.textContent = 'Poveži uređaj';
-    connectButton.disabled = hasActivePhysicalDevice(room);
+    connectButton.textContent = 'Dodaj fizički uređaj';
     connectButton.addEventListener('click', () => {
       connectingPhysicalRoomId = room.id;
       editingRoomId = null;
+      physicalConnectDeveloperMode = false;
       renderRooms(rooms);
     });
+    const virtualWindowButton = document.createElement('button');
+    virtualWindowButton.type = 'button';
+    virtualWindowButton.className = 'button-secondary';
+    virtualWindowButton.textContent = 'Virtualni prozor';
+    virtualWindowButton.addEventListener('click', () => addVirtualDevice(room, 'window'));
+    const virtualBlindsButton = document.createElement('button');
+    virtualBlindsButton.type = 'button';
+    virtualBlindsButton.className = 'button-secondary';
+    virtualBlindsButton.textContent = 'Virtualna roleta';
+    virtualBlindsButton.addEventListener('click', () => addVirtualDevice(room, 'blinds'));
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'button-danger';
     deleteButton.textContent = 'Obriši';
     deleteButton.addEventListener('click', () => deleteRoom(room));
-    actions.append(editButton, connectButton, deleteButton);
+    actions.append(editButton, virtualWindowButton, virtualBlindsButton, connectButton, deleteButton);
     header.append(roomMeta, actions);
 
     if (editingRoomId === room.id) {
@@ -382,40 +641,57 @@ function renderRooms(rooms) {
       nameInput.maxLength = 120;
       nameInput.placeholder = 'ESP32 - Fizički prototip';
       nameInput.setAttribute('aria-label', 'Naziv fizičkog uređaja');
-      const pairingCodeInput = document.createElement('input');
-      pairingCodeInput.type = 'text';
-      pairingCodeInput.maxLength = physicalConnectDeveloperMode ? 128 : 64;
-      pairingCodeInput.placeholder = physicalConnectDeveloperMode ? 'ThingsBoard Device ID' : 'Kod za povezivanje';
-      pairingCodeInput.setAttribute('aria-label', physicalConnectDeveloperMode ? 'ThingsBoard Device ID' : 'Kod za povezivanje');
+      const deviceIdentifierInput = document.createElement('input');
+      deviceIdentifierInput.type = 'text';
+      deviceIdentifierInput.maxLength = physicalConnectDeveloperMode ? 128 : 255;
+      deviceIdentifierInput.placeholder = physicalConnectDeveloperMode ? 'ThingsBoard Device ID' : 'ESP ThingsBoard token';
+      deviceIdentifierInput.setAttribute('aria-label', physicalConnectDeveloperMode ? 'ThingsBoard Device ID' : 'ESP ThingsBoard token');
+      const deviceKindSelect = createDeviceKindSelect();
       const saveButton = document.createElement('button');
       saveButton.type = 'button';
       saveButton.className = 'button-secondary';
-      saveButton.textContent = 'Poveži';
-      saveButton.addEventListener('click', () => connectPhysicalDevice(room.id, nameInput.value, pairingCodeInput.value));
+      saveButton.textContent = physicalConnectDeveloperMode ? 'Poveži' : 'Dodaj tokenom';
+      saveButton.addEventListener('click', () => {
+        if (physicalConnectDeveloperMode) {
+          connectPhysicalDevice(room.id, nameInput.value, deviceIdentifierInput.value, '', deviceKindSelect.value);
+          return;
+        }
+        connectPhysicalDeviceByToken(room.id, nameInput.value, deviceIdentifierInput.value);
+      });
       const cancelButton = document.createElement('button');
       cancelButton.type = 'button';
       cancelButton.textContent = 'Odustani';
       cancelButton.addEventListener('click', () => {
         connectingPhysicalRoomId = null;
+        physicalConnectDeveloperMode = false;
         renderRooms(rooms);
       });
       const developerButton = document.createElement('button');
       developerButton.type = 'button';
       developerButton.className = 'button-secondary';
-      developerButton.textContent = physicalConnectDeveloperMode ? 'Korisnički kod' : 'Developer ID';
+      developerButton.textContent = physicalConnectDeveloperMode ? 'ESP token' : 'Admin / Developer ID';
       developerButton.addEventListener('click', () => {
         physicalConnectDeveloperMode = !physicalConnectDeveloperMode;
         renderRooms(rooms);
       });
-      for (const input of [nameInput, pairingCodeInput]) {
+      const formInputs = physicalConnectDeveloperMode
+        ? [nameInput, deviceIdentifierInput, deviceKindSelect]
+        : [nameInput, deviceIdentifierInput];
+      for (const input of formInputs) {
         input.addEventListener('keydown', (event) => {
           if (event.key === 'Enter') {
             event.preventDefault();
-            connectPhysicalDevice(room.id, nameInput.value, pairingCodeInput.value);
+            saveButton.click();
           }
         });
       }
-      connectForm.append(nameInput, pairingCodeInput, saveButton, cancelButton, developerButton);
+      if (physicalConnectDeveloperMode) {
+        connectForm.append(nameInput, deviceIdentifierInput, deviceKindSelect);
+      } else {
+        connectForm.classList.add('physical-connect--token');
+        connectForm.append(nameInput, deviceIdentifierInput);
+      }
+      connectForm.append(saveButton, cancelButton, developerButton);
       item.append(header, connectForm);
       setTimeout(() => nameInput.focus(), 0);
     } else {
@@ -424,12 +700,26 @@ function renderRooms(rooms) {
 
     const devices = document.createElement('div');
     devices.className = 'device-list';
-    for (const device of room.devices || []) {
+    const roomDevices = orderedDevices(room);
+    const devicesHeader = document.createElement('div');
+    devicesHeader.className = 'device-list__header';
+    const devicesTitle = document.createElement('strong');
+    devicesTitle.textContent = `Uređaji u sobi (${roomDevices.length})`;
+    devicesHeader.append(devicesTitle);
+    devices.append(devicesHeader);
+    if (roomDevices.length === 0) {
+      const noDevice = document.createElement('p');
+      noDevice.className = 'form-message';
+      noDevice.textContent = 'Nema povezanog uređaja.';
+      devices.append(noDevice);
+    }
+    for (const device of roomDevices) {
       const deviceRow = document.createElement('div');
       const deviceName = document.createElement('strong');
       deviceName.textContent = device.name;
       const meta = document.createElement('span');
-      meta.textContent = `${device.deviceType} / ${device.status} / isVirtual=${device.isVirtual}`;
+      const deviceTypeLabel = device.deviceType === 'PHYSICAL' ? 'Fizički' : 'Virtualni';
+      meta.textContent = `${deviceTypeLabel} / ${device.status} / ${deviceKindLabel(device)}`;
       deviceRow.append(deviceName, meta);
       devices.append(deviceRow);
     }
@@ -447,8 +737,301 @@ async function loadRooms(announce = true) {
   await loadTelemetryForRooms(rooms);
   roomsLoaded = true;
   if (announce && rooms.length > 0) {
-    showRoomsMessage(`${rooms.length} soba ucitano.`);
+    showRoomsMessage(`${rooms.length} soba učitano.`);
   }
+}
+
+function setDashboardControlsEnabled(enabled) {
+  const controls = [
+    dom.autoModeButton,
+    dom.manualModeButton,
+    dom.dashboardDeviceSelect,
+    dom.windowSlider,
+    dom.blindsSlider,
+    dom.rainToggle,
+    dom.luxInput,
+    dom.rainProbabilityInput,
+    dom.windInput,
+    dom.temperatureInput,
+    dom.applyTelemetryButton,
+    dom.saveThresholdsButton,
+    dom.thresholdRain,
+    dom.thresholdLux,
+    dom.thresholdTemp,
+    dom.thresholdWind
+  ];
+
+  document.querySelectorAll('[data-target][data-action]').forEach((button) => {
+    button.disabled = !enabled;
+  });
+
+  for (const control of controls) {
+    control.disabled = !enabled;
+  }
+  setVisible(dom.simulationPanel, true);
+  dom.simulationAutoButton.disabled = true;
+  dom.simulationManualButton.disabled = true;
+  dom.simulationAutoButton.classList.remove('is-active');
+  dom.simulationManualButton.classList.remove('is-active');
+}
+
+function setRoomDashboardControlsEnabled(enabled) {
+  document.querySelectorAll('[data-target][data-action]').forEach((button) => {
+    button.disabled = !enabled;
+  });
+
+  dom.windowSlider.disabled = !enabled;
+  dom.blindsSlider.disabled = !enabled;
+  dom.dashboardDeviceSelect.disabled = !enabled || commandDevices(selectedDashboardRoom()).length === 0;
+  dom.autoModeButton.disabled = true;
+  dom.manualModeButton.disabled = true;
+  dom.saveThresholdsButton.disabled = false;
+  dom.thresholdRain.disabled = false;
+  dom.thresholdLux.disabled = false;
+  dom.thresholdTemp.disabled = false;
+  dom.thresholdWind.disabled = false;
+}
+
+function setRoomSimulationUi(room) {
+  const hasVirtual = hasActiveVirtualDevice(room);
+  setVisible(dom.simulationPanel, hasVirtual);
+  if (!hasVirtual || !currentRoomSimulation) {
+    return;
+  }
+
+  const manual = currentRoomSimulation.mode === 'MANUAL';
+  dom.simulationAutoButton.disabled = false;
+  dom.simulationManualButton.disabled = false;
+  dom.simulationAutoButton.classList.toggle('is-active', !manual);
+  dom.simulationManualButton.classList.toggle('is-active', manual);
+  dom.rainToggle.disabled = !manual;
+  dom.luxInput.disabled = !manual;
+  dom.rainProbabilityInput.disabled = !manual;
+  dom.windInput.disabled = !manual;
+  dom.temperatureInput.disabled = !manual;
+  dom.applyTelemetryButton.disabled = !manual;
+}
+
+function syncRoomThresholdInputs(thresholds) {
+  if (!thresholds) {
+    return;
+  }
+  dom.thresholdRain.value = thresholds.rainProbabilityClose;
+  dom.thresholdLux.value = thresholds.lightLuxShade;
+  dom.thresholdTemp.value = thresholds.indoorTempShadeC;
+  dom.thresholdWind.value = thresholds.windKphClose;
+}
+
+function resetDashboardControlValues() {
+  dom.windowSlider.value = 0;
+  dom.blindsSlider.value = 0;
+  dom.luxInput.value = 0;
+  dom.rainProbabilityInput.value = 0;
+  dom.windInput.value = 0;
+  dom.temperatureInput.value = 24;
+  dom.windowSliderValue.textContent = '--';
+  dom.blindsSliderValue.textContent = '--';
+  dom.luxInputValue.textContent = '--';
+  dom.rainProbabilityValue.textContent = '--';
+  dom.windInputValue.textContent = '--';
+  dom.temperatureInputValue.textContent = '--';
+  dom.rainToggle.checked = false;
+  dom.thresholdRain.value = '';
+  dom.thresholdLux.value = '';
+  dom.thresholdTemp.value = '';
+  dom.thresholdWind.value = '';
+  dom.autoModeButton.classList.remove('is-active');
+  dom.manualModeButton.classList.remove('is-active');
+}
+
+function syncRoomDashboardInputs(telemetry) {
+  const rainRisk = Number(telemetry.rainRiskPercent) || 0;
+  const lux = Number(telemetry.lux) || 0;
+  const indoorTemp = Number(telemetry.indoorTempC) || 0;
+  const wind = Number(telemetry.windKmh) || 0;
+  const windowOpen = Number(telemetry.windowOpenPercent) || 0;
+  const blindClosed = Number(telemetry.blindClosedPercent) || 0;
+
+  dom.windowSlider.value = windowOpen;
+  dom.windowSliderValue.textContent = formatPercent(windowOpen);
+  dom.blindsSlider.value = blindClosed;
+  dom.blindsSliderValue.textContent = formatPercent(blindClosed);
+  dom.rainToggle.checked = Boolean(telemetry.rainDetected);
+  dom.luxInput.value = lux;
+  dom.luxInputValue.textContent = formatLux(lux);
+  dom.rainProbabilityInput.value = rainRisk;
+  dom.rainProbabilityValue.textContent = formatPercent(rainRisk);
+  dom.windInput.value = wind;
+  dom.windInputValue.textContent = `${Math.round(wind)} km/h`;
+  dom.temperatureInput.value = indoorTemp;
+  dom.temperatureInputValue.textContent = formatTemp(indoorTemp);
+  syncRoomThresholdInputs(currentRoomThresholds);
+  dom.autoModeButton.classList.remove('is-active');
+  dom.manualModeButton.classList.remove('is-active');
+}
+
+function selectedDashboardRoom() {
+  return roomsCache.find((room) => room.id === selectedDashboardRoomId) || null;
+}
+
+async function loadSelectedDashboardRoomTelemetry(options = {}) {
+  const {
+    refreshDeviceOptions = true,
+    refreshControls = true,
+    refreshThresholds = true,
+    refreshSimulation = true
+  } = options;
+  const room = selectedDashboardRoom();
+  if (!room) {
+    return;
+  }
+
+  if (refreshDeviceOptions) {
+    renderDashboardDeviceOptions();
+  }
+  if (refreshControls) {
+    setRoomDashboardControlsEnabled(hasActiveControllableDevice(room));
+  }
+  if (refreshThresholds) {
+    await loadSelectedRoomThresholds();
+  }
+  if (refreshSimulation) {
+    await loadSelectedRoomSimulation(room);
+  }
+  try {
+    const telemetry = await api(`/api/rooms/${room.id}/telemetry/latest`);
+    roomTelemetry.set(room.id, telemetry);
+    renderDashboardTelemetry(room, telemetry, { syncControls: refreshControls });
+  } catch (error) {
+    renderDashboardPlaceholders(room, error.message || 'Telemetrija sobe nije dostupna.');
+  }
+}
+
+async function loadSelectedRoomSimulation(room = selectedDashboardRoom()) {
+  currentRoomSimulation = null;
+  if (!room || !hasActiveVirtualDevice(room)) {
+    setVisible(dom.simulationPanel, false);
+    return;
+  }
+
+  try {
+    currentRoomSimulation = await api(`/api/rooms/${room.id}/simulation`);
+    setRoomSimulationUi(room);
+  } catch (error) {
+    setVisible(dom.simulationPanel, false);
+    dom.dashboardSource.textContent = error.message;
+  }
+}
+
+async function loadSelectedRoomThresholds() {
+  currentRoomThresholds = null;
+  if (!selectedDashboardRoomId) {
+    return;
+  }
+
+  try {
+    const response = await api(`/api/rooms/${selectedDashboardRoomId}/automation/thresholds`);
+    currentRoomThresholds = response.thresholds;
+    syncRoomThresholdInputs(currentRoomThresholds);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function applyRoomActionResponse(response) {
+  const room = selectedDashboardRoom();
+  if (!room || !response) {
+    return;
+  }
+
+  if (response.thresholds) {
+    currentRoomThresholds = response.thresholds;
+    syncRoomThresholdInputs(currentRoomThresholds);
+  }
+
+  if (!response.telemetry || Object.keys(response.telemetry).length === 0) {
+    return;
+  }
+
+  if (hasActiveVirtualDevice(room)) {
+    currentRoomSimulation = {
+      ...(currentRoomSimulation || {}),
+      ...response,
+      telemetry: response.telemetry
+    };
+  }
+
+  const telemetryResponse = {
+    roomId: room.id,
+    roomName: room.name,
+    deviceName: response.deviceId || currentRoomSimulation?.deviceId || room.name,
+    deviceType: response.deviceType,
+    isVirtual: hasActiveVirtualDevice(room),
+    telemetry: response.telemetry,
+    updatedAt: response.updatedAt || response.telemetry.lastUpdatedAt,
+    message: response.decisions?.length
+      ? `Automatizacija: ${response.decisions.length} odluka`
+      : null
+  };
+  roomTelemetry.set(room.id, telemetryResponse);
+  renderDashboardTelemetry(room, telemetryResponse);
+}
+
+function startDashboardTelemetryPolling() {
+  if (dashboardTelemetryPollTimer) {
+    return;
+  }
+
+  dashboardTelemetryPollTimer = setInterval(() => {
+    if (routeName() === 'dashboard' && selectedDashboardRoomId) {
+      loadSelectedDashboardRoomTelemetry({
+        refreshDeviceOptions: false,
+        refreshControls: false,
+        refreshThresholds: false,
+        refreshSimulation: false
+      }).catch((error) => showToast(error.message));
+    }
+  }, 5000);
+}
+
+function stopDashboardTelemetryPolling() {
+  if (!dashboardTelemetryPollTimer) {
+    return;
+  }
+
+  clearInterval(dashboardTelemetryPollTimer);
+  dashboardTelemetryPollTimer = null;
+}
+
+async function loadEvents() {
+  try {
+    const data = await api('/api/events');
+    renderEvents(data?.events || []);
+  } catch (error) {
+    renderEvents([]);
+    showToast(error.message);
+  }
+}
+
+function startDashboardEventsPolling() {
+  if (dashboardEventsPollTimer) {
+    return;
+  }
+
+  dashboardEventsPollTimer = setInterval(() => {
+    if (routeName() === 'dashboard') {
+      loadEvents().catch((error) => showToast(error.message));
+    }
+  }, 5000);
+}
+
+function stopDashboardEventsPolling() {
+  if (!dashboardEventsPollTimer) {
+    return;
+  }
+
+  clearInterval(dashboardEventsPollTimer);
+  dashboardEventsPollTimer = null;
 }
 
 async function loadTelemetryForRooms(rooms = roomsCache) {
@@ -463,7 +1046,7 @@ async function loadTelemetryForRooms(rooms = roomsCache) {
       });
     }
   }));
-  renderRooms(rooms);
+  updateRenderedRoomTelemetry(rooms);
 }
 
 function startRoomsTelemetryPolling() {
@@ -508,6 +1091,23 @@ async function addRoom() {
   }
 }
 
+async function addVirtualDevice(room, kind) {
+  const label = DEVICE_KIND_OPTIONS.find((option) => option.value === kind)?.label || 'Uređaj';
+  try {
+    await api(`/api/rooms/${room.id}/devices/virtual`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: `Virtualni ${label.toLowerCase()} - ${room.name}`,
+        capabilities: selectedDeviceCapabilities(kind)
+      })
+    });
+    await loadRooms(false);
+    showRoomsMessage(`${label} je dodan kao virtualni uređaj.`);
+  } catch (error) {
+    showRoomsMessage(roomErrorMessage(error), 'error');
+  }
+}
+
 async function updateRoom(roomId, rawName) {
   const name = rawName.trim();
   if (!name) {
@@ -521,6 +1121,7 @@ async function updateRoom(roomId, rawName) {
       body: JSON.stringify({ name })
     });
     editingRoomId = null;
+    physicalConnectDeveloperMode = false;
     await loadRooms(false);
     showRoomsMessage('Soba je uspješno ažurirana.');
   } catch (error) {
@@ -528,23 +1129,29 @@ async function updateRoom(roomId, rawName) {
   }
 }
 
-async function connectPhysicalDevice(roomId, rawName, rawTbDeviceId) {
+async function connectPhysicalDevice(roomId, rawName, rawTbDeviceId, rawSerialNumber = '', kind = 'combined') {
   const name = rawName.trim();
   const deviceIdentifier = rawTbDeviceId.trim();
-  if (!name || !deviceIdentifier) {
+  const serialNumber = rawSerialNumber.trim();
+  if (!name || !deviceIdentifier || (!physicalConnectDeveloperMode && !serialNumber)) {
     showRoomsMessage(physicalConnectDeveloperMode
       ? 'Naziv uređaja i ThingsBoard Device ID su obavezni.'
-      : 'Naziv uređaja i kod za povezivanje su obavezni.', 'error');
+      : 'Naziv uređaja, serijski broj i kod za povezivanje su obavezni.', 'error');
     return;
   }
+  if (!kind) {
+    showRoomsMessage('Odaberi tip uređaja: prozor, roleta ili prozor + roleta.', 'error');
+    return;
+  }
+  const capabilities = selectedDeviceCapabilities(kind);
 
   try {
     const path = physicalConnectDeveloperMode
       ? `/api/rooms/${roomId}/devices/physical`
-      : `/api/rooms/${roomId}/devices/pair`;
+      : `/api/rooms/${roomId}/devices/entity`;
     const body = physicalConnectDeveloperMode
-      ? { name, tbDeviceId: deviceIdentifier }
-      : { name, pairingCode: deviceIdentifier };
+      ? { name, tbDeviceId: deviceIdentifier, capabilities }
+      : { name, serialNumber, pairingCode: deviceIdentifier, capabilities };
     await api(path, {
       method: 'POST',
       body: JSON.stringify(body)
@@ -553,6 +1160,28 @@ async function connectPhysicalDevice(roomId, rawName, rawTbDeviceId) {
     physicalConnectDeveloperMode = false;
     await loadRooms(false);
     showRoomsMessage('Fizički uređaj je povezan.');
+  } catch (error) {
+    showRoomsMessage(roomErrorMessage(error), 'error');
+  }
+}
+
+async function connectPhysicalDeviceByToken(roomId, rawName, rawAccessToken) {
+  const name = rawName.trim();
+  const accessToken = rawAccessToken.trim();
+  if (!name || !accessToken) {
+    showRoomsMessage('Naziv uređaja i ESP ThingsBoard token su obavezni.', 'error');
+    return;
+  }
+
+  try {
+    await api(`/api/rooms/${roomId}/devices/token`, {
+      method: 'POST',
+      body: JSON.stringify({ name, thingsBoardAccessToken: accessToken })
+    });
+    physicalConnectDeveloperMode = false;
+    connectingPhysicalRoomId = null;
+    await loadRooms(false);
+    showRoomsMessage('Fizički uređaj je dodan prema tvorničkom ESP tokenu.');
   } catch (error) {
     showRoomsMessage(roomErrorMessage(error), 'error');
   }
@@ -591,7 +1220,20 @@ function setStatusClass(element, status) {
 
 function renderEvents(events) {
   dom.eventList.innerHTML = '';
-  for (const event of events.slice(0, 8)) {
+  const visibleEvents = (events || []).slice(0, 8);
+  if (visibleEvents.length === 0) {
+    const item = document.createElement('li');
+    item.dataset.level = 'info';
+    const title = document.createElement('strong');
+    title.textContent = 'Nema događaja';
+    const details = document.createElement('span');
+    details.textContent = 'Novi događaji prikazat će se ovdje.';
+    item.append(title, details);
+    dom.eventList.append(item);
+    return;
+  }
+
+  for (const event of visibleEvents) {
     const item = document.createElement('li');
     item.dataset.level = event.level;
 
@@ -607,83 +1249,138 @@ function renderEvents(events) {
   }
 }
 
-function syncInputs(state) {
-  dom.windowSlider.value = state.actuators.window.openPercent;
-  dom.windowSliderValue.textContent = formatPercent(state.actuators.window.openPercent);
-  dom.blindsSlider.value = state.actuators.blinds.positionPercent;
-  dom.blindsSliderValue.textContent = formatPercent(state.actuators.blinds.positionPercent);
+function renderDashboardPlaceholders(room, message) {
+  dom.siteArea.textContent = 'Soba';
+  dom.siteName.textContent = room?.name || 'Dashboard';
+  dom.automationMode.textContent = 'SOBA';
+  dom.weatherLine.textContent = message || 'Telemetrija sobe nije dostupna.';
+  dom.lastUpdated.textContent = '--';
 
-  dom.rainToggle.checked = state.sensors.rainDetected;
-  dom.luxInput.value = state.sensors.lightLux;
-  dom.luxInputValue.textContent = formatLux(state.sensors.lightLux);
-  dom.rainProbabilityInput.value = state.weather.rainProbability;
-  dom.rainProbabilityValue.textContent = formatPercent(state.weather.rainProbability);
-  dom.windInput.value = state.weather.windKph;
-  dom.windInputValue.textContent = `${Math.round(state.weather.windKph)} km/h`;
-  dom.temperatureInput.value = state.sensors.indoorTempC;
-  dom.temperatureInputValue.textContent = formatTemp(state.sensors.indoorTempC);
+  dom.rainValue.textContent = '--';
+  dom.rainDetail.textContent = '--';
+  dom.lightValue.textContent = '--';
+  dom.lightDetail.textContent = '--';
+  dom.tempValue.textContent = '--';
+  dom.tempDetail.textContent = '--';
+  dom.windowValue.textContent = '--';
+  dom.windowDetail.textContent = '--';
+  dom.blindsValue.textContent = '--';
+  dom.blindsDetail.textContent = '--';
 
-  dom.thresholdRain.value = state.automation.thresholds.rainProbabilityClose;
-  dom.thresholdLux.value = state.automation.thresholds.lightLuxShade;
-  dom.thresholdTemp.value = state.automation.thresholds.indoorTempShadeC;
-  dom.thresholdWind.value = state.automation.thresholds.windKphClose;
+  dom.summaryWindowPercent.textContent = '--';
+  dom.summaryWindowOpen.textContent = '--';
+  dom.summaryBlindsPercent.textContent = '--';
+  dom.summaryBlindsDown.textContent = '--';
+  dom.summaryRain.textContent = '--';
+  dom.summaryWind.textContent = '--';
+
+  dom.iotPlatform.textContent = '--';
+  dom.deviceId.textContent = '--';
+  dom.lastSync.textContent = '--';
+  dom.iotError.textContent = message || '--';
+  dom.dashboardSource.textContent = message || 'Telemetrija sobe nije dostupna.';
+  dom.iotStatus.textContent = formatConnectionStatus('no_telemetry');
+  setStatusClass(dom.iotStatus, 'not_configured');
+  resetDashboardControlValues();
 }
 
-function render(state) {
-  currentState = state;
-  const rainProbability = Math.round(state.weather.rainProbability);
-  const rainThreshold = Number(state.automation.thresholds.rainProbabilityClose) || 0;
-  const rainActive = state.sensors.rainDetected || rainProbability >= rainThreshold;
+function renderDashboardTelemetry(room, telemetryResponse, options = {}) {
+  const { syncControls = true } = options;
+  const dashboardTelemetry = selectedDashboardTelemetry(room, telemetryResponse);
+  const telemetry = dashboardTelemetry?.telemetry || {};
+  if (Object.keys(telemetry).length === 0) {
+    renderDashboardPlaceholders(room, dashboardTelemetry?.message);
+    return;
+  }
 
-  dom.siteArea.textContent = state.site.area;
-  dom.siteName.textContent = state.site.name;
-  dom.automationMode.textContent = state.automation.mode.toUpperCase();
-  dom.lastUpdated.textContent = formatDate(state.updatedAt);
-  dom.autoModeButton.classList.toggle('is-active', state.automation.mode === 'auto');
-  dom.manualModeButton.classList.toggle('is-active', state.automation.mode === 'manual');
+  const isVirtual = dashboardTelemetry?.isVirtual !== false;
+  const rainDetected = Boolean(telemetry.rainDetected);
+  const rainRisk = Number(telemetry.rainRiskPercent) || 0;
+  const rainIntensity = Number(telemetry.rainIntensity) || 0;
+  const lux = Number(telemetry.lux) || 0;
+  const indoorTemp = Number(telemetry.indoorTempC) || 0;
+  const wind = Number(telemetry.windKmh) || 0;
+  const windowOpen = Number(telemetry.windowOpenPercent) || 0;
+  const blindClosed = Number(telemetry.blindClosedPercent) || 0;
 
-  const iotConnection = state.iot.connection || 'not_configured';
-  dom.iotStatus.textContent = iotConnection.replaceAll('_', ' ');
-  setStatusClass(dom.iotStatus, iotConnection);
+  dom.siteArea.textContent = 'Soba';
+  dom.siteName.textContent = room.name;
+  dom.automationMode.textContent = 'SOBA';
+  dom.weatherLine.textContent = `${rainRisk}% rizik kiše`;
+  dom.lastUpdated.textContent = formatDate(dashboardTelemetry?.updatedAt);
 
-  dom.rainValue.textContent = rainActive ? 'Aktivno' : 'Mirno';
-  dom.rainDetail.textContent = `${Math.round(state.sensors.rainIntensity)} intenzitet / ${rainProbability}% prognoza`;
-  dom.lightValue.textContent = formatLux(state.sensors.lightLux);
-  dom.lightDetail.textContent = `Prag zasjene ${formatLux(state.automation.thresholds.lightLuxShade)}`;
-  dom.tempValue.textContent = formatTemp(state.sensors.indoorTempC);
-  dom.tempDetail.textContent = `Prag zasjene ${formatTemp(state.automation.thresholds.indoorTempShadeC)}`;
-  dom.windowValue.textContent = formatPercent(state.actuators.window.openPercent);
-  dom.windowDetail.textContent = state.sensors.windowContactOpen ? 'Kontakt: otvoren' : 'Kontakt: zatvoren';
-  dom.blindsValue.textContent = formatPercent(state.actuators.blinds.positionPercent);
+  dom.rainValue.textContent = rainDetected ? 'Aktivno' : 'Mirno';
+  dom.rainDetail.textContent = `${Math.round(rainIntensity)} intenzitet / ${Math.round(rainRisk)}% rizik`;
+  dom.lightValue.textContent = formatLux(lux);
+  dom.lightDetail.textContent = 'Telemetrija sobe';
+  dom.tempValue.textContent = formatTemp(indoorTemp);
+  dom.tempDetail.textContent = 'Telemetrija sobe';
+  dom.windowValue.textContent = formatPercent(windowOpen);
+  dom.windowDetail.textContent = 'Zadnja telemetrija';
+  dom.blindsValue.textContent = formatPercent(blindClosed);
   dom.blindsDetail.textContent = '0% gore / 100% dolje';
 
-  dom.weatherLine.textContent = `${state.weather.condition} / ${rainProbability}% rizik kise`;
-  dom.summaryWindowPercent.textContent = formatPercent(state.actuators.window.openPercent);
-  dom.summaryWindowOpen.textContent = state.sensors.windowContactOpen ? 'Da' : 'Ne';
-  dom.summaryBlindsPercent.textContent = formatPercent(state.actuators.blinds.positionPercent);
-  dom.summaryBlindsDown.textContent = state.actuators.blinds.positionPercent > 0 ? 'Da' : 'Ne';
-  dom.summaryRain.textContent = rainActive ? 'Pada' : 'Ne pada';
-  dom.summaryWind.textContent = `${Math.round(state.weather.windKph)} km/h`;
+  dom.summaryWindowPercent.textContent = formatPercent(windowOpen);
+  dom.summaryWindowOpen.textContent = windowOpen > 0 ? 'Da' : 'Ne';
+  dom.summaryBlindsPercent.textContent = formatPercent(blindClosed);
+  dom.summaryBlindsDown.textContent = blindClosed > 0 ? 'Da' : 'Ne';
+  dom.summaryRain.textContent = rainDetected ? 'Pada' : 'Ne pada';
+  dom.summaryWind.textContent = `${Math.round(wind)} km/h`;
 
-  dom.iotPlatform.textContent = state.iot.platform;
-  dom.deviceId.textContent = state.site.deviceId;
-  dom.lastSync.textContent = formatDate(state.iot.lastSyncAt);
-  dom.iotError.textContent = state.iot.lastError || '--';
+  dom.iotPlatform.textContent = isVirtual ? 'Simulacija' : 'ThingsBoard';
+  dom.deviceId.textContent = dashboardTelemetry?.deviceName || '--';
+  dom.lastSync.textContent = formatDate(dashboardTelemetry?.updatedAt);
+  dom.iotError.textContent = dashboardTelemetry?.message || '--';
+  dom.dashboardSource.textContent = isVirtual
+    ? `Izvor: ${dashboardTelemetry?.deviceName || room.name} / simulacija`
+    : `Izvor: ${dashboardTelemetry?.deviceName || room.name} / fizički ESP32`;
 
-  syncInputs(state);
-  renderEvents(state.events);
+  dom.iotStatus.textContent = isVirtual ? 'simulacija' : formatConnectionStatus('physical');
+  setStatusClass(dom.iotStatus, isVirtual ? 'configured' : 'connected');
+  if (syncControls) {
+    syncRoomDashboardInputs(telemetry);
+    const selectedRoom = selectedDashboardRoom();
+    if (selectedRoom) {
+      setRoomSimulationUi(selectedRoom);
+    }
+  }
 }
 
 async function sendCommand(target, action, positionPercent) {
-  await api('/api/commands', {
-    method: 'POST',
-    body: JSON.stringify({
+  if (selectedDashboardRoomId) {
+    const room = selectedDashboardRoom();
+    const selectedDeviceId = dom.dashboardDeviceSelect.value || null;
+    const selectedDevice = selectedDeviceId
+      ? commandDevices(room).find((device) => device.id === selectedDeviceId)
+      : null;
+    if (selectedDevice && !deviceSupportsTarget(selectedDevice, target)) {
+      throw new Error(apiErrorMessage('DEVICE_DOES_NOT_SUPPORT_CAPABILITY'));
+    }
+
+    const payload = {
       target,
       action,
-      positionPercent
-    })
-  });
-  showToast('Komanda je poslana.');
+      positionPercent,
+      source: 'room-dashboard'
+    };
+    if (selectedDeviceId) {
+      payload.localDeviceId = selectedDeviceId;
+    }
+
+    const result = await api(`/api/rooms/${selectedDashboardRoomId}/commands`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const delivery = result.delivery === 'THINGSBOARD_RPC'
+      ? 'ThingsBoard RPC'
+      : result.delivery === 'POLLING' ? 'polling queue' : 'lokalna simulacija';
+    showToast(`Sobna komanda: ${result.status} (${delivery}).`);
+    dom.dashboardSource.textContent = `Zadnja komanda: ${result.target}/${result.action} -> ${result.deviceId}`;
+    await loadSelectedDashboardRoomTelemetry();
+    return;
+  }
+
+  showToast('Odaberite sobu s povezanim uređajem.');
 }
 
 function bindControls() {
@@ -733,19 +1430,26 @@ function bindControls() {
 
   dom.applyTelemetryButton.addEventListener('click', async () => {
     try {
-      await api('/api/telemetry', {
-        method: 'POST',
-        body: JSON.stringify({
-          source: 'web-simulator',
-          rainDetected: dom.rainToggle.checked,
-          rainIntensity: dom.rainToggle.checked ? 70 : 0,
-          lightLux: Number(dom.luxInput.value),
-          rainProbability: Number(dom.rainProbabilityInput.value),
-          windKph: Number(dom.windInput.value),
-          indoorTempC: Number(dom.temperatureInput.value)
-        })
-      });
-      showToast('Simulacija je primijenjena.');
+      if (selectedDashboardRoomId) {
+        currentRoomSimulation = await api(`/api/rooms/${selectedDashboardRoomId}/simulation`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            rainDetected: dom.rainToggle.checked,
+            rainIntensity: dom.rainToggle.checked ? 70 : 0,
+            lux: Number(dom.luxInput.value),
+            rainRiskPercent: Number(dom.rainProbabilityInput.value),
+            windKmh: Number(dom.windInput.value),
+            indoorTempC: Number(dom.temperatureInput.value),
+            windowOpenPercent: Number(dom.windowSlider.value),
+            blindClosedPercent: Number(dom.blindsSlider.value)
+          })
+        });
+        applyRoomActionResponse(currentRoomSimulation);
+        showToast('Simulacija sobe je primijenjena.');
+        return;
+      }
+
+      showToast('Odaberite virtualnu sobu za simulaciju.');
     } catch (error) {
       showToast(error.message);
     }
@@ -753,16 +1457,24 @@ function bindControls() {
 
   dom.saveThresholdsButton.addEventListener('click', async () => {
     try {
-      await api('/api/automation/thresholds', {
-        method: 'POST',
-        body: JSON.stringify({
-          rainProbabilityClose: Number(dom.thresholdRain.value),
-          lightLuxShade: Number(dom.thresholdLux.value),
-          indoorTempShadeC: Number(dom.thresholdTemp.value),
-          windKphClose: Number(dom.thresholdWind.value)
-        })
-      });
-      showToast('Pravila su spremljena.');
+      if (selectedDashboardRoomId) {
+        const response = await api(`/api/rooms/${selectedDashboardRoomId}/automation/thresholds`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            rainProbabilityClose: Number(dom.thresholdRain.value),
+            lightLuxShade: Number(dom.thresholdLux.value),
+            indoorTempShadeC: Number(dom.thresholdTemp.value),
+            windKphClose: Number(dom.thresholdWind.value)
+          })
+        });
+        currentRoomThresholds = response.thresholds;
+        syncRoomThresholdInputs(currentRoomThresholds);
+        applyRoomActionResponse(response);
+        showToast('Pravila sobe su spremljena.');
+        return;
+      }
+
+      showToast('Odaberite sobu za spremanje pravila.');
     } catch (error) {
       showToast(error.message);
     }
@@ -775,20 +1487,58 @@ function bindControls() {
       addRoom();
     }
   });
-}
 
-function startStream() {
-  if (!window.EventSource) {
-    setInterval(() => api('/api/state').then(render).catch(() => {}), 2500);
-    return;
-  }
-
-  const stream = new EventSource('/api/stream');
-  stream.addEventListener('state', (event) => {
-    render(JSON.parse(event.data));
+  dom.dashboardRoomSelect.addEventListener('change', async () => {
+    const value = dom.dashboardRoomSelect.value;
+    selectedDashboardRoomId = value || null;
+    await loadSelectedDashboardRoomTelemetry();
+    startDashboardTelemetryPolling();
   });
-  stream.addEventListener('error', () => {
-    showToast('Live veza se obnavlja.');
+
+  dom.dashboardDeviceSelect.addEventListener('change', async () => {
+    if (!selectedDashboardRoomId) {
+      return;
+    }
+    selectedDashboardDeviceIdByRoom.set(selectedDashboardRoomId, dom.dashboardDeviceSelect.value || '');
+    const room = selectedDashboardRoom();
+    const telemetry = room ? roomTelemetry.get(room.id) : null;
+    if (room && telemetry) {
+      renderDashboardTelemetry(room, telemetry);
+      return;
+    }
+    await loadSelectedDashboardRoomTelemetry();
+  });
+
+  dom.simulationAutoButton.addEventListener('click', async () => {
+    if (!selectedDashboardRoomId) {
+      return;
+    }
+    try {
+      currentRoomSimulation = await api(`/api/rooms/${selectedDashboardRoomId}/simulation/mode`, {
+        method: 'PATCH',
+        body: JSON.stringify({ mode: 'AUTO' })
+      });
+      setRoomSimulationUi(selectedDashboardRoom());
+      showToast('Simulacija sobe je u AUTO načinu.');
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  dom.simulationManualButton.addEventListener('click', async () => {
+    if (!selectedDashboardRoomId) {
+      return;
+    }
+    try {
+      currentRoomSimulation = await api(`/api/rooms/${selectedDashboardRoomId}/simulation/mode`, {
+        method: 'PATCH',
+        body: JSON.stringify({ mode: 'MANUAL' })
+      });
+      setRoomSimulationUi(selectedDashboardRoom());
+      showToast('Simulacija sobe je u ručnom načinu.');
+    } catch (error) {
+      showToast(error.message);
+    }
   });
 }
 

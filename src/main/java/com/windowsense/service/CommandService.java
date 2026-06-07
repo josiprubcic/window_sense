@@ -1,11 +1,14 @@
 package com.windowsense.service;
 
-import com.windowsense.config.WindowSenseProperties;
-import com.windowsense.model.CommandRequest;
-import com.windowsense.model.CommandResult;
-import com.windowsense.model.Decision;
-import com.windowsense.model.WindowSenseState;
-import com.windowsense.repository.WindowSenseStateRepository;
+import com.windowsense.dto.CommandRequest;
+import com.windowsense.service.CommandResult;
+import com.windowsense.entity.RuntimeState;
+import com.windowsense.repository.RuntimeStateRepository;
+import com.windowsense.exception.ResourceNotFoundException;
+import com.windowsense.entity.DeviceStatus;
+import com.windowsense.entity.DeviceType;
+import com.windowsense.entity.WindowDevice;
+import com.windowsense.repository.WindowDeviceRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -15,35 +18,62 @@ import java.util.Set;
 @Service
 public class CommandService {
 
-    private static final Set<String> TARGETS = Set.of("window", "blinds", "automation");
     private static final Set<String> ACTIONS = Set.of("open", "close", "stop", "setPosition", "auto", "manual");
 
-    private final String deviceId;
-    private final WindowSenseStateRepository repository;
+    private final RuntimeStateRepository repository;
     private final EventLogService eventLogService;
-    private final StatePublisher statePublisher;
+    private final WindowDeviceRepository windowDeviceRepository;
 
     public CommandService(
-            WindowSenseProperties properties,
-            WindowSenseStateRepository repository,
+            RuntimeStateRepository repository,
             EventLogService eventLogService,
-            StatePublisher statePublisher
+            WindowDeviceRepository windowDeviceRepository
     ) {
-        this.deviceId = properties.getDeviceId();
         this.repository = repository;
         this.eventLogService = eventLogService;
-        this.statePublisher = statePublisher;
+        this.windowDeviceRepository = windowDeviceRepository;
     }
 
-    public CommandResult applyCommand(CommandRequest request) {
-        CommandResult result = repository.withState(state -> applyCommand(state, request, true, true));
-        statePublisher.publish(repository.getState(), "command");
+    public CommandResult enqueueDeviceCommand(String targetDeviceId, CommandRequest request) {
+        String deviceId = PayloadValues.required(targetDeviceId, "ID uredjaja je obavezan.");
+        CommandResult result = repository.withState(state -> {
+            CommandResult prepared = prepareDeviceCommand(deviceId, request);
+            RuntimeState.Command queued = queueCommand(state, prepared.queued);
+            eventLogService.addEvent(
+                    state,
+                    "info",
+                    queued.source,
+                    "Sobna komanda: " + queued.target + "/" + queued.action,
+                    "Komanda je dodana u queue za uredjaj " + deviceId + "."
+            );
+            touch(state);
+            return CommandResult.command(queued.target, queued.action, queued.positionPercent, queued);
+        });
         return result;
     }
 
-    public List<WindowSenseState.Command> pollCommands(String requestedDeviceId) {
+    public CommandResult prepareDeviceCommand(String targetDeviceId, CommandRequest request) {
+        String deviceId = PayloadValues.required(targetDeviceId, "ID uredjaja je obavezan.");
+        String target = PayloadValues.required(request.target(), "Nepoznat cilj komande.");
+        String action = PayloadValues.required(request.action(), "Nepoznata akcija komande.");
+        String source = request.source() == null || request.source().isBlank() ? "web" : request.source();
+
+        if (!"window".equals(target) && !"blinds".equals(target)) {
+            throw new IllegalArgumentException("Sobne komande podrzavaju samo prozor i rolete.");
+        }
+
+        if (!ACTIONS.contains(action) || "auto".equals(action) || "manual".equals(action)) {
+            throw new IllegalArgumentException("Nepoznata akcija komande.");
+        }
+
+        Double position = commandPosition(target, action, request.positionPercent(), null);
+        RuntimeState.Command command = new RuntimeState.Command(deviceId, target, action, position, source);
+        return CommandResult.command(target, action, position, command);
+    }
+
+    private List<RuntimeState.Command> pollCommands(String requestedDeviceId) {
+        String id = PayloadValues.required(requestedDeviceId, "deviceId je obavezan.");
         return repository.withState(state -> {
-            String id = requestedDeviceId == null || requestedDeviceId.isBlank() ? deviceId : requestedDeviceId;
             return state.commandQueue.stream()
                     .filter(command -> id.equals(command.deviceId))
                     .filter(command -> "pending".equals(command.status))
@@ -51,12 +81,18 @@ public class CommandService {
         });
     }
 
-    public WindowSenseState.Command acknowledgeCommand(String commandId, String status) {
-        WindowSenseState.Command command = repository.withState(state -> {
-            for (WindowSenseState.Command queued : state.commandQueue) {
-                if (queued.id.equals(commandId)) {
+    public List<RuntimeState.Command> pollCommandsForSerialNumber(String serialNumber) {
+        WindowDevice device = physicalDeviceBySerialNumber(serialNumber);
+        return pollCommands(device.getTbDeviceId());
+    }
+
+    public RuntimeState.Command acknowledgeCommand(String commandId, String requestedDeviceId, String status) {
+        String id = PayloadValues.required(requestedDeviceId, "deviceId je obavezan.");
+        RuntimeState.Command command = repository.withState(state -> {
+            for (RuntimeState.Command queued : state.commandQueue) {
+                if (queued.id.equals(commandId) && id.equals(queued.deviceId)) {
                     queued.status = status == null || status.isBlank() ? "acknowledged" : status;
-                    queued.acknowledgedAt = WindowSenseState.now();
+                    queued.acknowledgedAt = RuntimeState.now();
                     eventLogService.addEvent(
                             state,
                             "success",
@@ -72,80 +108,25 @@ public class CommandService {
             return null;
         });
 
-        if (command != null) {
-            statePublisher.publish(repository.getState(), "device-ack");
-        }
-
         return command;
     }
 
-    public void applyAutomationDecisions(WindowSenseState state, List<Decision> decisions) {
-        for (Decision decision : decisions) {
-            applyCommand(
-                    state,
-                    new CommandRequest(decision.target(), decision.action(), decision.positionPercent(), "automation"),
-                    true,
-                    true
-            );
-            state.automation.lastDecisionAt = WindowSenseState.now();
-            eventLogService.addEvent(state, "success", "automation", "Automatska odluka", decision.reason());
-        }
+    public RuntimeState.Command acknowledgeCommandForSerialNumber(String commandId, String serialNumber, String status) {
+        WindowDevice device = physicalDeviceBySerialNumber(serialNumber);
+        return acknowledgeCommand(commandId, device.getTbDeviceId(), status);
     }
 
-    private CommandResult applyCommand(
-            WindowSenseState state,
-            CommandRequest request,
-            boolean queue,
-            boolean addCommandEvent
-    ) {
-        String target = PayloadValues.required(request.target(), "Nepoznat cilj komande.");
-        String action = PayloadValues.required(request.action(), "Nepoznata akcija komande.");
-        String source = request.source() == null || request.source().isBlank() ? "api" : request.source();
-
-        if (!TARGETS.contains(target)) {
-            throw new IllegalArgumentException("Nepoznat cilj komande.");
+    private WindowDevice physicalDeviceBySerialNumber(String serialNumber) {
+        String id = PayloadValues.required(serialNumber, "serialNumber je obavezan.").trim();
+        WindowDevice device = windowDeviceRepository.findByPhysicalHardwareId(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Fizicki uredjaj nije povezan sa sobom."));
+        if (device.getDeviceType() != DeviceType.PHYSICAL || device.getStatus() != DeviceStatus.ACTIVE) {
+            throw new ResourceNotFoundException("Fizicki uredjaj nije aktivan.");
         }
-
-        if (!ACTIONS.contains(action)) {
-            throw new IllegalArgumentException("Nepoznata akcija komande.");
-        }
-
-        if ("automation".equals(target)) {
-            if (!"auto".equals(action) && !"manual".equals(action)) {
-                throw new IllegalArgumentException("Automatizacija podrzava samo auto ili manual mod.");
-            }
-
-            state.automation.mode = action;
-            touch(state);
-            eventLogService.addEvent(state, "info", source, "Automatizacija: " + action,
-                    "Nacin rada promijenjen je u " + action + ".");
-            return CommandResult.mode(state.automation.mode);
-        }
-
-        if ("stop".equals(action)) {
-            actuator(state, target).status = "idle";
-            touch(state);
-            eventLogService.addEvent(state, "warning", source, "Zaustavljen " + target,
-                    "Aktuator je zaustavljen rucnom komandom.");
-            return CommandResult.command(target, action, null, null);
-        }
-
-        Double position = setActuatorState(state, target, action, request.positionPercent());
-        WindowSenseState.Command queued = queue
-                ? queueCommand(state, new WindowSenseState.Command(deviceId, target, action, position, source))
-                : null;
-
-        if (addCommandEvent) {
-            String label = "window".equals(target) ? "Prozor" : "Rolete";
-            eventLogService.addEvent(state, "automation".equals(source) ? "success" : "info", source,
-                    label + ": " + action, "Ciljana pozicija je " + Math.round(position) + "%.");
-        }
-
-        touch(state);
-        return CommandResult.command(target, action, position, queued);
+        return device;
     }
 
-    private WindowSenseState.Command queueCommand(WindowSenseState state, WindowSenseState.Command command) {
+    private RuntimeState.Command queueCommand(RuntimeState state, RuntimeState.Command command) {
         state.commandQueue.add(0, command);
         if (state.commandQueue.size() > 40) {
             state.commandQueue = new ArrayList<>(state.commandQueue.subList(0, 40));
@@ -153,39 +134,44 @@ public class CommandService {
         return command;
     }
 
-    private Double setActuatorState(WindowSenseState state, String target, String action, Double positionPercent) {
-        String now = WindowSenseState.now();
-        if ("window".equals(target)) {
-            double current = state.actuators.window.openPercent;
-            double nextPosition = switch (action) {
-                case "open" -> 100;
-                case "close" -> 0;
-                default -> PayloadValues.clamp(positionPercent == null ? current : positionPercent, 0, 100);
-            };
-            state.actuators.window.openPercent = nextPosition;
-            state.actuators.window.status = "idle";
-            state.actuators.window.lastCommandAt = now;
-            state.sensors.windowContactOpen = nextPosition > 0;
-            return nextPosition;
+    private Double commandPosition(String target, String action, Double positionPercent, Double currentPosition) {
+        if ("stop".equals(action)) {
+            return null;
         }
 
-        double current = state.actuators.blinds.positionPercent;
-        double nextPosition = switch (action) {
-            case "open" -> 0;
-            case "close" -> 100;
-            default -> PayloadValues.clamp(positionPercent == null ? current : positionPercent, 0, 100);
+        if ("window".equals(target)) {
+            return switch (action) {
+                case "open" -> 100.0;
+                case "close" -> 0.0;
+                case "setPosition" -> PayloadValues.clamp(
+                        positionPercent == null ? requiredCurrentPosition(currentPosition) : positionPercent,
+                        0,
+                        100
+                );
+                default -> throw new IllegalArgumentException("Nepoznata akcija komande.");
+            };
+        }
+
+        return switch (action) {
+            case "open" -> 0.0;
+            case "close" -> 100.0;
+            case "setPosition" -> PayloadValues.clamp(
+                    positionPercent == null ? requiredCurrentPosition(currentPosition) : positionPercent,
+                    0,
+                    100
+            );
+            default -> throw new IllegalArgumentException("Nepoznata akcija komande.");
         };
-        state.actuators.blinds.positionPercent = nextPosition;
-        state.actuators.blinds.status = "idle";
-        state.actuators.blinds.lastCommandAt = now;
-        return nextPosition;
     }
 
-    private WindowSenseState.DeviceActuator actuator(WindowSenseState state, String target) {
-        return "window".equals(target) ? state.actuators.window : state.actuators.blinds;
+    private double requiredCurrentPosition(Double currentPosition) {
+        if (currentPosition == null) {
+            throw new IllegalArgumentException("Pozicija je obavezna za setPosition komandu.");
+        }
+        return currentPosition;
     }
 
-    private void touch(WindowSenseState state) {
-        state.updatedAt = WindowSenseState.now();
+    private void touch(RuntimeState state) {
+        state.updatedAt = RuntimeState.now();
     }
 }

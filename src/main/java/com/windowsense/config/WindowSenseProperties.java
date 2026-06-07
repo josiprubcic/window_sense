@@ -8,19 +8,11 @@ import java.util.List;
 @ConfigurationProperties(prefix = "windowsense")
 public class WindowSenseProperties {
 
-    private String deviceId = "windowsense-esp32-01";
     private ThingsBoard thingsBoard = new ThingsBoard();
     private Security security = new Security();
     private Encryption encryption = new Encryption();
     private VirtualSimulator virtualSimulator = new VirtualSimulator();
-
-    public String getDeviceId() {
-        return deviceId;
-    }
-
-    public void setDeviceId(String deviceId) {
-        this.deviceId = deviceId;
-    }
+    private Commands commands = new Commands();
 
     public ThingsBoard getThingsBoard() {
         return thingsBoard;
@@ -54,10 +46,17 @@ public class WindowSenseProperties {
         this.virtualSimulator = virtualSimulator == null ? new VirtualSimulator() : virtualSimulator;
     }
 
+    public Commands getCommands() {
+        return commands;
+    }
+
+    public void setCommands(Commands commands) {
+        this.commands = commands == null ? new Commands() : commands;
+    }
+
     public static class ThingsBoard {
         private String host = "";
-        private String accessToken = "";
-        private boolean syncEnabled = false;
+        private String mqttHost = "";
         private boolean provisioningEnabled = false;
         private ProvisioningAuthMode provisioningAuthMode = ProvisioningAuthMode.PASSWORD;
         private ThingsBoardDeleteMode deleteMode = ThingsBoardDeleteMode.SOFT;
@@ -74,20 +73,12 @@ public class WindowSenseProperties {
             this.host = host == null ? "" : host.replaceAll("/+$", "");
         }
 
-        public String getAccessToken() {
-            return accessToken;
+        public String getMqttHost() {
+            return mqttHost;
         }
 
-        public void setAccessToken(String accessToken) {
-            this.accessToken = accessToken == null ? "" : accessToken;
-        }
-
-        public boolean isSyncEnabled() {
-            return syncEnabled;
-        }
-
-        public void setSyncEnabled(boolean syncEnabled) {
-            this.syncEnabled = syncEnabled;
+        public void setMqttHost(String mqttHost) {
+            this.mqttHost = mqttHost == null ? "" : mqttHost.trim();
         }
 
         public boolean isProvisioningEnabled() {
@@ -146,12 +137,12 @@ public class WindowSenseProperties {
             this.apiKey = apiKey == null ? "" : apiKey;
         }
 
-        public boolean isReady() {
-            return syncEnabled && !host.isBlank() && !accessToken.isBlank();
+        public boolean isProvisioningReady() {
+            return provisioningEnabled && isRestAuthReady();
         }
 
-        public boolean isProvisioningReady() {
-            return provisioningEnabled && !host.isBlank() && switch (provisioningAuthMode) {
+        public boolean isRestAuthReady() {
+            return !host.isBlank() && switch (provisioningAuthMode) {
                 case PASSWORD -> !username.isBlank() && !password.isBlank();
                 case JWT -> !jwtToken.isBlank();
                 case API_KEY -> !apiKey.isBlank();
@@ -170,6 +161,62 @@ public class WindowSenseProperties {
         HARD
     }
 
+    public static class Commands {
+        private PhysicalCommandDelivery physicalDelivery = PhysicalCommandDelivery.POLLING;
+        private Rpc rpc = new Rpc();
+
+        public PhysicalCommandDelivery getPhysicalDelivery() {
+            return physicalDelivery;
+        }
+
+        public void setPhysicalDelivery(PhysicalCommandDelivery physicalDelivery) {
+            this.physicalDelivery = physicalDelivery == null ? PhysicalCommandDelivery.POLLING : physicalDelivery;
+        }
+
+        public Rpc getRpc() {
+            return rpc;
+        }
+
+        public void setRpc(Rpc rpc) {
+            this.rpc = rpc == null ? new Rpc() : rpc;
+        }
+    }
+
+    public enum PhysicalCommandDelivery {
+        POLLING,
+        THINGSBOARD_RPC
+    }
+
+    public static class Rpc {
+        private boolean enabled = false;
+        private long timeoutMs = 15000;
+        private boolean persistent = false;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public long getTimeoutMs() {
+            return timeoutMs;
+        }
+
+        public void setTimeoutMs(long timeoutMs) {
+            this.timeoutMs = timeoutMs <= 0 ? 15000 : timeoutMs;
+        }
+
+        public boolean isPersistent() {
+            return persistent;
+        }
+
+        public void setPersistent(boolean persistent) {
+            this.persistent = persistent;
+        }
+    }
+
     public static class Encryption {
         private String key = "";
 
@@ -184,6 +231,9 @@ public class WindowSenseProperties {
 
     public static class VirtualSimulator {
         private boolean enabled = false;
+        private boolean publishToThingsBoard = false;
+        private boolean mqttRpcEnabled = false;
+        private long mqttReconnectIntervalMs = 10000;
         private long intervalMs = 5000;
         private String rainStateFilePath = "./stanje_kise.txt";
         private String weatherDataFilePath = "./vrijeme.csv";
@@ -194,6 +244,30 @@ public class WindowSenseProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+
+        public boolean isPublishToThingsBoard() {
+            return publishToThingsBoard;
+        }
+
+        public void setPublishToThingsBoard(boolean publishToThingsBoard) {
+            this.publishToThingsBoard = publishToThingsBoard;
+        }
+
+        public boolean isMqttRpcEnabled() {
+            return mqttRpcEnabled;
+        }
+
+        public void setMqttRpcEnabled(boolean mqttRpcEnabled) {
+            this.mqttRpcEnabled = mqttRpcEnabled;
+        }
+
+        public long getMqttReconnectIntervalMs() {
+            return mqttReconnectIntervalMs;
+        }
+
+        public void setMqttReconnectIntervalMs(long mqttReconnectIntervalMs) {
+            this.mqttReconnectIntervalMs = mqttReconnectIntervalMs <= 0 ? 10000 : mqttReconnectIntervalMs;
         }
 
         public long getIntervalMs() {

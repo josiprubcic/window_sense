@@ -1,0 +1,20 @@
+alter table window_device add column simulation_mode varchar(20) not null default 'AUTO';
+alter table window_device add column sim_rain_detected boolean not null default false;
+alter table window_device add column sim_rain_intensity double precision not null default 0;
+alter table window_device add column sim_rain_risk_percent double precision not null default 12;
+alter table window_device add column sim_lux double precision not null default 52000;
+alter table window_device add column sim_indoor_temp_c double precision not null default 23.5;
+alter table window_device add column sim_wind_kmh double precision not null default 8;
+alter table window_device add column sim_window_open_percent double precision not null default 72;
+alter table window_device add column sim_blind_closed_percent double precision not null default 20;
+alter table window_device add column sim_last_updated_at timestamp with time zone not null default current_timestamp;
+alter table window_device add constraint chk_window_device_simulation_mode check (simulation_mode in ('AUTO', 'MANUAL'));
+
+alter table room add column threshold_rain_intensity_close double precision not null default 0;
+alter table room add column threshold_rain_probability_close double precision not null default 55;
+alter table room add column threshold_wind_kph_close double precision not null default 45;
+alter table room add column threshold_light_lux_shade double precision not null default 55000;
+alter table room add column threshold_light_lux_release double precision not null default 16000;
+alter table room add column threshold_indoor_temp_shade_c double precision not null default 25;
+alter table room add column threshold_blinds_shade_position double precision not null default 85;
+alter table room add column threshold_blinds_release_position double precision not null default 20;

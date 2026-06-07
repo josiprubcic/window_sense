@@ -14,3 +14,5 @@ spring:
 windowsense:
   virtual-simulator:
     enabled: false
+    publish-to-things-board: false
+    mqtt-rpc-enabled: false

@@ -35,7 +35,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -56,6 +57,18 @@ button:hover {
 
 button:active {
   transform: translateY(0);
+}
+
+button:disabled,
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+button:disabled:hover {
+  border-color: var(--border-strong);
+  transform: none;
 }
 
 .button-danger {
@@ -205,6 +218,44 @@ h2 {
 .dashboard {
   display: grid;
   gap: 16px;
+}
+
+.dashboard-roombar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.dashboard-roombar label {
+  display: grid;
+  gap: 6px;
+  min-width: min(280px, 100%);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dashboard-roombar select {
+  min-height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: #fbfcfb;
+  color: var(--text);
+}
+
+select {
+  min-height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: #fbfcfb;
+  color: var(--text);
+}
+
+.dashboard-roombar .form-message {
+  margin: 0;
 }
 
 .login-view {
@@ -398,6 +449,15 @@ h2 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
+}
+
+.command-device-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .button-secondary {
@@ -654,11 +714,16 @@ input[type="checkbox"] {
 }
 
 .physical-connect {
-  grid-template-columns: minmax(150px, 0.8fr) minmax(220px, 1.2fr) auto auto auto;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(180px, 1fr) minmax(150px, 0.8fr) repeat(5, auto);
+}
+
+.physical-connect--esp {
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) repeat(3, auto);
 }
 
 .room-edit input,
-.physical-connect input {
+.physical-connect input,
+.physical-connect select {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--border-strong);
@@ -683,6 +748,11 @@ input[type="checkbox"] {
   gap: 6px;
 }
 
+.device-list__header {
+  border-bottom: 1px solid var(--border-strong);
+  padding-bottom: 4px;
+}
+
 .device-list div {
   display: grid;
   gap: 4px;
@@ -691,6 +761,13 @@ input[type="checkbox"] {
 .room-telemetry {
   border-top: 1px solid var(--border-strong);
   padding-top: 10px;
+}
+
+.telemetry-source {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .telemetry-grid {

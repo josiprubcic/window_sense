@@ -1,6 +1,6 @@
 package com.windowsense.security;
 
-import com.windowsense.common.EncryptionException;
+import com.windowsense.exception.EncryptionException;
 import com.windowsense.config.WindowSenseProperties;
 import org.springframework.stereotype.Service;
 
