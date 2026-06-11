@@ -6,6 +6,7 @@ public record RoomAutomationAttributesRequest(
         UUID roomId,
         String roomName,
         String tbDeviceId,
-        double rainThreshold
+        double rainThreshold,
+        boolean manualMode
 ) {
 }

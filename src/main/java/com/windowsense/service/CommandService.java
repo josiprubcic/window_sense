@@ -39,12 +39,16 @@ public class CommandService {
         CommandResult result = repository.withState(state -> {
             CommandResult prepared = prepareDeviceCommand(deviceId, request);
             RuntimeState.Command queued = queueCommand(state, prepared.queued);
-            eventLogService.addEvent(
+            WindowDevice device = windowDeviceRepository.findByTbDeviceId(deviceId).orElse(null);
+            eventLogService.addRoomEvent(
                     state,
                     "info",
                     queued.source,
                     "Sobna komanda: " + queued.target + "/" + queued.action,
-                    "Komanda je dodana u queue za uredjaj " + deviceId + "."
+                    "Komanda je dodana u queue za uredjaj " + deviceId + ".",
+                    device == null ? null : device.getRoom(),
+                    device,
+                    "Rucna komanda ceka potvrdu uredjaja"
             );
             touch(state);
             return CommandResult.command(queued.target, queued.action, queued.positionPercent, queued);
@@ -93,12 +97,16 @@ public class CommandService {
                 if (queued.id.equals(commandId) && id.equals(queued.deviceId)) {
                     queued.status = status == null || status.isBlank() ? "acknowledged" : status;
                     queued.acknowledgedAt = RuntimeState.now();
-                    eventLogService.addEvent(
+                    WindowDevice device = windowDeviceRepository.findByTbDeviceId(id).orElse(null);
+                    eventLogService.addRoomEvent(
                             state,
                             "success",
                             "device",
                             "Komanda potvrdjena",
-                            queued.target + "/" + queued.action + " -> " + queued.status
+                            queued.target + "/" + queued.action + " -> " + queued.status,
+                            device == null ? null : device.getRoom(),
+                            device,
+                            "Uredjaj je potvrdio izvrsenje komande"
                     );
                     touch(state);
                     return queued;

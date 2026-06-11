@@ -12,6 +12,9 @@ public record WindowDeviceResponse(
         String tbDeviceId,
         String serialNumber,
         String deviceUid,
+        double desiredAngleDay,
+        double desiredAngleNight,
+        double desiredAngleRain,
         Set<String> capabilities
 ) {
 }

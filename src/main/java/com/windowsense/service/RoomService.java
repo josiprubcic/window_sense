@@ -753,7 +753,7 @@ public class RoomService {
             device.updateSimulationTelemetry(
                     booleanValue(payload, "rainDetected", device.isSimRainDetected()),
                     numberValue(payload, "rainIntensity", device.getSimRainIntensity(), 0, 100),
-                    numberValue(payload, "rainRiskPercent", device.getSimRainRiskPercent(), 0, 100),
+                    numberValue(payload, "rainProbability", device.getSimRainRiskPercent(), 0, 100),
                     numberValue(payload, "lux", device.getSimLux(), 0, 120000),
                     numberValue(payload, "indoorTempC", device.getSimIndoorTempC(), -30, 80),
                     numberValue(payload, "windKmh", device.getSimWindKmh(), 0, 250),
@@ -857,6 +857,57 @@ public class RoomService {
         );
     }
 
+    @Transactional
+    public RoomResponse updateAutomationMode(UUID roomId, Map<String, Object> payload) {
+        AppUser user = currentUserService.getOrCreateCurrentUser();
+        Room room = findOwnedRoom(roomId, user);
+        Object rawMode = payload.get("mode");
+        if (rawMode == null || rawMode.toString().isBlank()) {
+            throw new IllegalArgumentException("Način rada je obavezan.");
+        }
+        String mode = rawMode.toString().trim().toUpperCase();
+        boolean manualMode = switch (mode) {
+            case "MANUAL" -> true;
+            case "AUTO", "AUTOMATIC" -> false;
+            default -> throw new IllegalArgumentException("Nepoznat način rada.");
+        };
+
+        room.updateManualMode(manualMode);
+        for (WindowDevice device : room.getDevices()) {
+            if (device.getStatus() != DeviceStatus.ACTIVE) {
+                continue;
+            }
+            if (device.getDeviceType() == DeviceType.VIRTUAL) {
+                device.updateSimulationMode(manualMode ? SimulationMode.MANUAL : SimulationMode.AUTO);
+            }
+            syncDeviceSharedAttributes(device, Map.of("manualMode", manualMode));
+        }
+        return roomMapper.toResponse(room);
+    }
+
+    @Transactional
+    public RoomResponse updateDeviceAutomationAngles(UUID roomId, UUID deviceId, Map<String, Object> payload) {
+        AppUser user = currentUserService.getOrCreateCurrentUser();
+        Room room = findOwnedRoom(roomId, user);
+        WindowDevice device = room.getDevices().stream()
+                .filter(candidate -> candidate.getStatus() == DeviceStatus.ACTIVE)
+                .filter(candidate -> deviceId.equals(candidate.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Uredjaj nije pronadjen u sobi."));
+
+        device.updateDesiredAngles(
+                numberValue(payload, "desiredAngleDay", device.getDesiredAngleDay(), 0, 90),
+                numberValue(payload, "desiredAngleNight", device.getDesiredAngleNight(), 0, 90),
+                numberValue(payload, "desiredAngleRain", device.getDesiredAngleRain(), 0, 90)
+        );
+        syncDeviceSharedAttributes(device, Map.of(
+                "desiredAngleDay", integerAttribute(device.getDesiredAngleDay()),
+                "desiredAngleNight", integerAttribute(device.getDesiredAngleNight()),
+                "desiredAngleRain", integerAttribute(device.getDesiredAngleRain())
+        ));
+        return roomMapper.toResponse(room);
+    }
+
     private Optional<RoomTelemetryResponse> latestPhysicalTelemetry(Room room, WindowDevice device) {
         if (!isRealThingsBoardId(device.getTbDeviceId(), MOCK_THINGSBOARD_DEVICE_PREFIX)) {
             return Optional.empty();
@@ -933,15 +984,12 @@ public class RoomService {
     private Map<String, Object> ruleChainRuntimeSharedAttributes(Map<String, Object> payload) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         Object rainProbability = payload.get("rainProbability");
-        if (rainProbability == null) {
-            rainProbability = payload.get("rainRiskPercent");
-        }
         if (rainProbability != null) {
-            attributes.put("rainProbability", rainProbability);
+            attributes.put("rainProbability", integerAttribute(rainProbability));
         }
         Object day = payload.get("day");
         if (day != null) {
-            attributes.put("day", day);
+            attributes.put("day", integerAttribute(day));
         }
         return attributes;
     }
@@ -1134,9 +1182,31 @@ public class RoomService {
                     room.getId(),
                     room.getName(),
                     device.getTbDeviceId(),
-                    room.getThresholdRainProbabilityClose()
+                    room.getThresholdRainProbabilityClose(),
+                    room.isManualMode()
+            ));
+            syncDeviceSharedAttributes(device, Map.of(
+                    "desiredAngleDay", integerAttribute(device.getDesiredAngleDay()),
+                    "desiredAngleNight", integerAttribute(device.getDesiredAngleNight()),
+                    "desiredAngleRain", integerAttribute(device.getDesiredAngleRain())
             ));
         }
+    }
+
+    private int integerAttribute(Object value) {
+        if (value instanceof Number number) {
+            return (int) Math.round(number.doubleValue());
+        }
+        return (int) Math.round(Double.parseDouble(value.toString()));
+    }
+
+    private void syncDeviceSharedAttributes(WindowDevice device, Map<String, Object> attributes) {
+        if (!automationProperties.isThingsBoardRuleChainEngine()
+                || device.getStatus() != DeviceStatus.ACTIVE
+                || !isRealThingsBoardId(device.getTbDeviceId(), MOCK_THINGSBOARD_DEVICE_PREFIX)) {
+            return;
+        }
+        thingsBoardProvisioningService.syncDeviceSharedAttributes(device.getTbDeviceId(), attributes);
     }
 
     private boolean isRealThingsBoardId(String value, String mockPrefix) {

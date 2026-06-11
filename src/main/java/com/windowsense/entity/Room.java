@@ -67,6 +67,9 @@ public class Room {
     @Column(name = "threshold_blinds_release_position", nullable = false)
     private double thresholdBlindsReleasePosition = 20;
 
+    @Column(name = "manual_mode", nullable = false)
+    private boolean manualMode = false;
+
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WindowDevice> devices = new ArrayList<>();
 
@@ -168,6 +171,14 @@ public class Room {
 
     public double getThresholdBlindsReleasePosition() {
         return thresholdBlindsReleasePosition;
+    }
+
+    public boolean isManualMode() {
+        return manualMode;
+    }
+
+    public void updateManualMode(boolean manualMode) {
+        this.manualMode = manualMode;
     }
 
     public void updateThresholds(

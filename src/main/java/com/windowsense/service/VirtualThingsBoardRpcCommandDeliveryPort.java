@@ -75,7 +75,7 @@ public class VirtualThingsBoardRpcCommandDeliveryPort {
                         properties.getCommands().getRpc().isPersistent()
                 )
         );
-        recordRpcEvent(queued, result);
+        recordRpcEvent(roomId, targetDevice, queued, result);
 
         return new RoomCommandResponse(
                 queued.id,
@@ -94,14 +94,19 @@ public class VirtualThingsBoardRpcCommandDeliveryPort {
         );
     }
 
-    private void recordRpcEvent(RuntimeState.Command command, ThingsBoardRpcResult result) {
+    private void recordRpcEvent(UUID roomId, WindowDevice targetDevice, RuntimeState.Command command, ThingsBoardRpcResult result) {
         runtimeStateRepository.withState(state -> {
             eventLogService.addEvent(
                     state,
                     eventLevel(result.status()),
                     command.source,
                     "ThingsBoard RPC: " + command.target + "/" + command.action,
-                    "Status " + result.status() + " za virtualni uredjaj " + command.deviceId + "."
+                    "Status " + result.status() + " za virtualni uredjaj " + command.deviceId + ".",
+                    roomId == null ? null : roomId.toString(),
+                    targetDevice.getRoom() == null ? null : targetDevice.getRoom().getName(),
+                    targetDevice.getId() == null ? null : targetDevice.getId().toString(),
+                    targetDevice.getName(),
+                    "Rucna komanda poslana kroz ThingsBoard RPC"
             );
             state.updatedAt = RuntimeState.now();
             return null;

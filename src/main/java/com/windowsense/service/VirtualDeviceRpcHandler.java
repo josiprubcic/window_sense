@@ -82,7 +82,7 @@ public class VirtualDeviceRpcHandler {
             return new Command(method, "window", "setAngle", DeviceCapability.WINDOW_CONTROL, position);
         }
         if (device.hasCapability(DeviceCapability.BLINDS_CONTROL)) {
-            return new Command(method, "blinds", "setAngle", DeviceCapability.BLINDS_CONTROL, 100.0 - position);
+            return new Command(method, "blinds", "setAngle", DeviceCapability.BLINDS_CONTROL, position);
         }
         return new Command(method, "window", "setAngle", DeviceCapability.WINDOW_CONTROL, position);
     }
@@ -149,12 +149,15 @@ public class VirtualDeviceRpcHandler {
     private void logRpc(WindowDevice device, Command command, Map<String, Object> params) {
         boolean dashboardCommand = params != null && params.containsKey("commandId");
         runtimeStateRepository.withState(state -> {
-            eventLogService.addEvent(
+            eventLogService.addRoomEvent(
                     state,
                     "success",
                     "thingsboard-rpc",
                     rpcEventTitle(command, dashboardCommand),
-                    rpcDecisionDetails(device, command, dashboardCommand)
+                    rpcDecisionDetails(device, command, dashboardCommand),
+                    device.getRoom(),
+                    device,
+                    dashboardCommand ? "Rucna komanda iz dashboarda" : "Automatska odluka ThingsBoard rule chaina"
             );
             state.updatedAt = RuntimeState.now();
             return null;

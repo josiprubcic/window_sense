@@ -49,6 +49,7 @@ import com.windowsense.dto.CommandRequest;
 import com.windowsense.service.CommandResult;
 import com.windowsense.entity.RuntimeState;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -496,6 +497,7 @@ class RoomServiceTest {
     }
 
     @Test
+    @Tag("core")
     void latestTelemetryPrefersActivePhysicalDeviceWhenRoomHasOne() {
         UUID userId = UUID.randomUUID();
         UUID roomId = UUID.randomUUID();
@@ -579,7 +581,7 @@ class RoomServiceTest {
         roomService.updateSimulation(roomId, Map.of(
                 "rainDetected", true,
                 "rainIntensity", 47,
-                "rainRiskPercent", 79,
+                "rainProbability", 79,
                 "lux", 12300,
                 "indoorTempC", 22.7,
                 "windKmh", 31,
@@ -625,7 +627,7 @@ class RoomServiceTest {
         roomService.updateSimulation(roomId, Map.of(
                 "rainDetected", false,
                 "rainIntensity", 0,
-                "rainRiskPercent", 31,
+                "rainProbability", 31,
                 "lux", 29000,
                 "indoorTempC", 22.5,
                 "windKmh", 16,
@@ -652,6 +654,7 @@ class RoomServiceTest {
     }
 
     @Test
+    @Tag("core")
     void updateSimulationWithWeatherOnlyPayloadPreservesSeparateVirtualDevicePositions() {
         UUID userId = UUID.randomUUID();
         UUID roomId = UUID.randomUUID();
@@ -681,7 +684,7 @@ class RoomServiceTest {
         roomService.updateSimulation(roomId, Map.of(
                 "rainDetected", true,
                 "rainIntensity", 70,
-                "rainRiskPercent", 80,
+                "rainProbability", 80,
                 "day", 0
         ));
 
@@ -729,6 +732,7 @@ class RoomServiceTest {
     }
 
     @Test
+    @Tag("core")
     void virtualRoomCommandUsesThingsBoardRpcWhenVirtualRpcIsReady() {
         UUID userId = UUID.randomUUID();
         UUID roomId = UUID.randomUUID();
@@ -777,6 +781,7 @@ class RoomServiceTest {
     }
 
     @Test
+    @Tag("core")
     void virtualRoomCommandFallsBackToLocalSimulationWhenVirtualRpcIsNotReady() {
         UUID userId = UUID.randomUUID();
         UUID roomId = UUID.randomUUID();
@@ -808,6 +813,68 @@ class RoomServiceTest {
         assertThat(blinds.getSimBlindClosedPercent()).isEqualTo(85.0);
         verify(commandService).acknowledgeCommand(queued.id, "tb-blinds-id", "executed");
         verify(telemetryPublisher).publishTelemetry(org.mockito.Mockito.eq(blinds), any());
+    }
+
+    @Test
+    @Tag("core")
+    void updateAutomationModePersistsAndSyncsManualModeToRoomDevices() {
+        automationProperties().setEngine(com.windowsense.config.WindowSenseProperties.AutomationEngine.THINGSBOARD_RULE_CHAIN);
+        UUID userId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+        AppUser user = user(userId);
+        Room room = room(roomId, "Kuhinja", "real-asset-id", "real-device-id");
+
+        when(currentUserService.getOrCreateCurrentUser()).thenReturn(user);
+        when(roomRepository.findByIdAndHomeAppUserId(roomId, userId)).thenReturn(Optional.of(room));
+
+        RoomResponse response = roomService.updateAutomationMode(roomId, Map.of("mode", "MANUAL"));
+
+        assertThat(response.manualMode()).isTrue();
+        assertThat(room.isManualMode()).isTrue();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> attributesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(provisioningService).syncDeviceSharedAttributes(
+                org.mockito.Mockito.eq("real-device-id"),
+                attributesCaptor.capture()
+        );
+        assertThat(attributesCaptor.getValue()).containsEntry("manualMode", true);
+    }
+
+    @Test
+    @Tag("core")
+    void updateDeviceAutomationAnglesPersistsAndSyncsSelectedDeviceAngles() {
+        automationProperties().setEngine(com.windowsense.config.WindowSenseProperties.AutomationEngine.THINGSBOARD_RULE_CHAIN);
+        UUID userId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        AppUser user = user(userId);
+        Room room = room(roomId, "Kuhinja", "real-asset-id", "real-device-id");
+        WindowDevice device = room.getDevices().getFirst();
+        ReflectionTestUtils.setField(device, "id", deviceId);
+
+        when(currentUserService.getOrCreateCurrentUser()).thenReturn(user);
+        when(roomRepository.findByIdAndHomeAppUserId(roomId, userId)).thenReturn(Optional.of(room));
+
+        RoomResponse response = roomService.updateDeviceAutomationAngles(roomId, deviceId, Map.of(
+                "desiredAngleDay", 80,
+                "desiredAngleNight", 5,
+                "desiredAngleRain", 30
+        ));
+
+        WindowDeviceResponse updatedDevice = response.devices().getFirst();
+        assertThat(updatedDevice.desiredAngleDay()).isEqualTo(80.0);
+        assertThat(updatedDevice.desiredAngleNight()).isEqualTo(5.0);
+        assertThat(updatedDevice.desiredAngleRain()).isEqualTo(30.0);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> attributesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(provisioningService).syncDeviceSharedAttributes(
+                org.mockito.Mockito.eq("real-device-id"),
+                attributesCaptor.capture()
+        );
+        assertThat(attributesCaptor.getValue())
+                .containsEntry("desiredAngleDay", 80)
+                .containsEntry("desiredAngleNight", 5)
+                .containsEntry("desiredAngleRain", 30);
     }
 
     private static AppUser user(UUID userId) {

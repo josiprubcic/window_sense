@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -59,8 +60,8 @@ public class WindowSenseController {
             summary = "Dohvati event log",
             description = "Vraća zadnje događaje sustava, npr. zaprimljenu telemetriju, automatske odluke i potvrde uređaja."
     )
-    public Map<String, Object> events() {
-        return Map.of("events", runtimeStateService.events());
+    public Map<String, Object> events(@RequestParam(required = false) String roomId) {
+        return Map.of("events", runtimeStateService.events(roomId));
     }
 
     @GetMapping("/api/esp/{serialNumber}/commands")
@@ -104,7 +105,6 @@ public class WindowSenseController {
             @PathVariable String serialNumber,
             @RequestBody AckRequest request
     ) {
-        // TODO: require an X-WindowSense-Device-Token or equivalent device authentication before production use.
         Object command = commandService.acknowledgeCommandForSerialNumber(
                 request.commandId(),
                 serialNumber,

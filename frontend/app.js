@@ -22,6 +22,7 @@ const dom = {
   autoModeButton: document.querySelector('#autoModeButton'),
   manualModeButton: document.querySelector('#manualModeButton'),
   dashboardDeviceSelect: document.querySelector('#dashboardDeviceSelect'),
+  manualControls: document.querySelector('#manualControls'),
   windowSlider: document.querySelector('#windowSlider'),
   windowSliderValue: document.querySelector('#windowSliderValue'),
   blindsSlider: document.querySelector('#blindsSlider'),
@@ -33,11 +34,10 @@ const dom = {
   controlsPanel: document.querySelector('#controlsPanel'),
   simulationPanel: document.querySelector('#simulationPanel'),
   automationPanel: document.querySelector('#automationPanel'),
-  simulationAutoButton: document.querySelector('#simulationAutoButton'),
-  simulationManualButton: document.querySelector('#simulationManualButton'),
   applyTelemetryButton: document.querySelector('#applyTelemetryButton'),
   saveThresholdsButton: document.querySelector('#saveThresholdsButton'),
   thresholdRain: document.querySelector('#thresholdRain'),
+  deviceAngleRules: document.querySelector('#deviceAngleRules'),
   iotPlatform: document.querySelector('#iotPlatform'),
   deviceId: document.querySelector('#deviceId'),
   lastSync: document.querySelector('#lastSync'),
@@ -288,6 +288,10 @@ function hasActiveVirtualDevice(room) {
   return (room.devices || []).some((device) => device.deviceType === 'VIRTUAL' && device.status === 'ACTIVE');
 }
 
+function activeDevices(room) {
+  return orderedDevices(room).filter((device) => device.status === 'ACTIVE');
+}
+
 function deviceSupportsTarget(device, target) {
   const capabilities = device?.capabilities || [];
   if (target === 'window') {
@@ -358,7 +362,7 @@ function commandDevices(room) {
   if (!room) {
     return [];
   }
-  return orderedDevices(room).filter((device) => device.status === 'ACTIVE'
+  return activeDevices(room).filter((device) => device.status === 'ACTIVE'
     && (deviceSupportsTarget(device, 'window') || deviceSupportsTarget(device, 'blinds')));
 }
 
@@ -367,6 +371,13 @@ function telemetryValue(telemetry, key, formatter = (value) => value) {
     return '--';
   }
   return formatter(telemetry[key]);
+}
+
+function rainProbabilityValue(telemetry) {
+  if (!telemetry) {
+    return 0;
+  }
+  return Number(telemetry.rainProbability ?? telemetry.rainRiskPercent) || 0;
 }
 
 function deviceTelemetryItems(device) {
@@ -471,7 +482,7 @@ function renderRoomTelemetry(room) {
   const rows = [
     ['Kiša', telemetryValue(telemetry, 'rainDetected', (value) => value ? 'Pada' : 'Ne pada')],
     ['Intenzitet kiše', telemetryValue(telemetry, 'rainIntensity', (value) => `${Math.round(Number(value))}`)],
-    ['Rizik kiše', telemetryValue(telemetry, 'rainRiskPercent', (value) => formatPercent(value))],
+    ['Rizik kiše', formatPercent(rainProbabilityValue(telemetry))],
     ['Prozor', telemetryValue(telemetry, 'windowOpenPercent', (value) => formatPercent(value))],
     ['Roleta', telemetryValue(telemetry, 'blindClosedPercent', (value) => formatPercent(value))]
   ];
@@ -823,42 +834,44 @@ function setDashboardControlsEnabled(enabled) {
     control.disabled = !enabled;
   }
   setVisible(dom.simulationPanel, true);
-  dom.simulationAutoButton.disabled = true;
-  dom.simulationManualButton.disabled = true;
-  dom.simulationAutoButton.classList.remove('is-active');
-  dom.simulationManualButton.classList.remove('is-active');
+  setVisible(dom.manualControls, true);
+  dom.autoModeButton.classList.remove('is-active');
+  dom.manualModeButton.classList.remove('is-active');
+  dom.deviceAngleRules.innerHTML = '';
 }
 
 function setRoomDashboardControlsEnabled(enabled) {
+  const room = selectedDashboardRoom();
+  const manual = Boolean(room?.manualMode);
   document.querySelectorAll('[data-target][data-action]').forEach((button) => {
-    button.disabled = !enabled;
+    button.disabled = !enabled || !manual;
   });
 
-  dom.windowSlider.disabled = !enabled;
-  dom.blindsSlider.disabled = !enabled;
+  dom.windowSlider.disabled = !enabled || !manual;
+  dom.blindsSlider.disabled = !enabled || !manual;
   dom.dashboardDeviceSelect.disabled = !enabled || commandDevices(selectedDashboardRoom()).length === 0;
-  dom.autoModeButton.disabled = true;
-  dom.manualModeButton.disabled = true;
+  dom.autoModeButton.disabled = !enabled;
+  dom.manualModeButton.disabled = !enabled;
+  dom.autoModeButton.classList.toggle('is-active', enabled && !manual);
+  dom.manualModeButton.classList.toggle('is-active', enabled && manual);
+  setVisible(dom.manualControls, manual);
   dom.saveThresholdsButton.disabled = false;
   dom.thresholdRain.disabled = false;
 }
 
 function setRoomSimulationUi(room) {
-  const hasVirtual = hasActiveVirtualDevice(room);
-  setVisible(dom.simulationPanel, hasVirtual);
-  if (!hasVirtual || !currentRoomSimulation) {
+  const hasDevice = hasActiveControllableDevice(room);
+  setVisible(dom.simulationPanel, hasDevice);
+  if (!hasDevice) {
     return;
   }
 
-  const manual = currentRoomSimulation.mode === 'MANUAL';
-  dom.simulationAutoButton.disabled = false;
-  dom.simulationManualButton.disabled = false;
-  dom.simulationAutoButton.classList.toggle('is-active', !manual);
-  dom.simulationManualButton.classList.toggle('is-active', manual);
-  dom.rainToggle.disabled = !manual;
-  dom.rainProbabilityInput.disabled = !manual;
-  dom.dayNightToggle.disabled = !manual;
-  dom.applyTelemetryButton.disabled = !manual;
+  const manual = Boolean(room?.manualMode);
+  const virtualAuto = !manual && hasActiveVirtualDevice(room);
+  dom.rainToggle.disabled = !virtualAuto;
+  dom.rainProbabilityInput.disabled = !virtualAuto;
+  dom.dayNightToggle.disabled = !virtualAuto;
+  dom.applyTelemetryButton.disabled = !virtualAuto;
 }
 
 function syncRoomThresholdInputs(thresholds) {
@@ -866,6 +879,93 @@ function syncRoomThresholdInputs(thresholds) {
     return;
   }
   dom.thresholdRain.value = thresholds.rainProbabilityClose;
+}
+
+function updateRoomCache(room) {
+  if (!room) {
+    return;
+  }
+  roomsCache = roomsCache.map((item) => item.id === room.id ? room : item);
+}
+
+function deviceAngleRuleLabel(device) {
+  if (deviceSupportsTarget(device, 'blinds') && !deviceSupportsTarget(device, 'window')) {
+    return 'Kut rolete';
+  }
+  if (deviceSupportsTarget(device, 'window') && !deviceSupportsTarget(device, 'blinds')) {
+    return 'Kut prozora';
+  }
+  return 'Kut uređaja';
+}
+
+function renderDeviceAngleRules(room) {
+  dom.deviceAngleRules.innerHTML = '';
+  const devices = activeDevices(room).filter((device) => deviceSupportsTarget(device, 'window') || deviceSupportsTarget(device, 'blinds'));
+  if (devices.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'form-message';
+    empty.textContent = 'Nema aktivnih uređaja za pravila kutova.';
+    dom.deviceAngleRules.append(empty);
+    return;
+  }
+
+  for (const device of devices) {
+    const card = document.createElement('section');
+    card.className = 'device-angle-rule';
+
+    const header = document.createElement('header');
+    const title = document.createElement('div');
+    const name = document.createElement('strong');
+    name.textContent = device.name;
+    const meta = document.createElement('small');
+    meta.textContent = `${deviceKindLabel(device)} / ${device.deviceType === 'PHYSICAL' ? 'Fizički' : 'Virtualni'}`;
+    title.append(name, meta);
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'button-secondary';
+    save.textContent = 'Spremi';
+    header.append(title, save);
+
+    const fields = document.createElement('div');
+    fields.className = 'device-angle-rule__fields';
+    const inputs = [
+      ['desiredAngleRain', 'Kiša', device.desiredAngleRain],
+      ['desiredAngleDay', 'Dan', device.desiredAngleDay],
+      ['desiredAngleNight', 'Noć', device.desiredAngleNight]
+    ].map(([key, label, value]) => {
+      const field = document.createElement('label');
+      const text = document.createElement('span');
+      text.textContent = `${deviceAngleRuleLabel(device)} ${label.toLowerCase()}`;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.max = '90';
+      input.step = '1';
+      input.value = Number(value ?? 0);
+      input.dataset.angleKey = key;
+      field.append(text, input);
+      fields.append(field);
+      return input;
+    });
+
+    save.addEventListener('click', async () => {
+      try {
+        const payload = Object.fromEntries(inputs.map((input) => [input.dataset.angleKey, Number(input.value)]));
+        const updatedRoom = await api(`/api/rooms/${room.id}/devices/${device.id}/automation/angles`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+        updateRoomCache(updatedRoom);
+        renderDeviceAngleRules(updatedRoom);
+        showToast('Pravila uređaja su spremljena.');
+      } catch (error) {
+        showToast(error.message);
+      }
+    });
+
+    card.append(header, fields);
+    dom.deviceAngleRules.append(card);
+  }
 }
 
 function resetDashboardControlValues() {
@@ -880,10 +980,11 @@ function resetDashboardControlValues() {
   dom.thresholdRain.value = '';
   dom.autoModeButton.classList.remove('is-active');
   dom.manualModeButton.classList.remove('is-active');
+  dom.deviceAngleRules.innerHTML = '';
 }
 
 function syncRoomDashboardInputs(telemetry) {
-  const rainRisk = Number(telemetry.rainRiskPercent) || 0;
+  const rainRisk = rainProbabilityValue(telemetry);
   const windowOpen = Number(telemetry.windowOpenPercent) || 0;
   const blindClosed = Number(telemetry.blindClosedPercent) || 0;
 
@@ -896,8 +997,6 @@ function syncRoomDashboardInputs(telemetry) {
   dom.rainProbabilityValue.textContent = formatPercent(rainRisk);
   dom.dayNightToggle.checked = Number(telemetry.day) === 1;
   syncRoomThresholdInputs(currentRoomThresholds);
-  dom.autoModeButton.classList.remove('is-active');
-  dom.manualModeButton.classList.remove('is-active');
 }
 
 function selectedDashboardRoom() {
@@ -921,6 +1020,7 @@ async function loadSelectedDashboardRoomTelemetry(options = {}) {
   }
   if (refreshControls) {
     setRoomDashboardControlsEnabled(hasActiveControllableDevice(room));
+    renderDeviceAngleRules(room);
   }
   if (refreshThresholds) {
     await loadSelectedRoomThresholds();
@@ -939,8 +1039,11 @@ async function loadSelectedDashboardRoomTelemetry(options = {}) {
 
 async function loadSelectedRoomSimulation(room = selectedDashboardRoom()) {
   currentRoomSimulation = null;
-  if (!room || !hasActiveVirtualDevice(room)) {
-    setVisible(dom.simulationPanel, false);
+  if (!room) {
+    return;
+  }
+  if (!hasActiveVirtualDevice(room)) {
+    setRoomSimulationUi(room);
     return;
   }
 
@@ -1035,7 +1138,11 @@ function stopDashboardTelemetryPolling() {
 
 async function loadEvents() {
   try {
-    const data = await api('/api/events');
+    const roomScoped = routeName() === 'dashboard' && selectedDashboardRoomId;
+    const endpoint = roomScoped
+      ? `/api/events?roomId=${encodeURIComponent(selectedDashboardRoomId)}`
+      : '/api/events';
+    const data = await api(endpoint);
     renderEvents(data?.events || []);
   } catch (error) {
     renderEvents([]);
@@ -1293,10 +1400,18 @@ function renderEvents(events) {
     title.textContent = event.title;
     const details = document.createElement('span');
     details.textContent = event.details;
+    const reason = document.createElement('span');
+    reason.className = 'event-reason';
+    reason.textContent = event.reason ? `Razlog: ${event.reason}` : '';
     const meta = document.createElement('small');
-    meta.textContent = `${formatDate(event.ts)} / ${event.source}`;
+    const roomLabel = event.roomName ? ` / ${event.roomName}` : '';
+    meta.textContent = `${formatDate(event.ts)} / ${event.source}${roomLabel}`;
 
-    item.append(title, details, meta);
+    item.append(title, details);
+    if (event.reason) {
+      item.append(reason);
+    }
+    item.append(meta);
     dom.eventList.append(item);
   }
 }
@@ -1340,7 +1455,7 @@ function renderDashboardTelemetry(room, telemetryResponse, options = {}) {
 
   const isVirtual = dashboardTelemetry?.isVirtual !== false;
   const rainDetected = Boolean(telemetry.rainDetected);
-  const rainRisk = Number(telemetry.rainRiskPercent) || 0;
+  const rainRisk = rainProbabilityValue(telemetry);
   const rainIntensity = Number(telemetry.rainIntensity) || 0;
 
   dom.siteArea.textContent = 'Soba';
@@ -1411,6 +1526,23 @@ async function sendCommand(target, action, positionPercent) {
   showToast('Odaberite sobu s povezanim uređajem.');
 }
 
+async function updateAutomationMode(mode) {
+  if (!selectedDashboardRoomId) {
+    showToast('Odaberite sobu za promjenu načina rada.');
+    return;
+  }
+  const updatedRoom = await api(`/api/rooms/${selectedDashboardRoomId}/automation/mode`, {
+    method: 'PATCH',
+    body: JSON.stringify({ mode })
+  });
+  updateRoomCache(updatedRoom);
+  renderDashboardDeviceOptions();
+  setRoomDashboardControlsEnabled(hasActiveControllableDevice(updatedRoom));
+  renderDeviceAngleRules(updatedRoom);
+  setRoomSimulationUi(updatedRoom);
+  showToast(mode === 'MANUAL' ? 'Ručni način je uključen.' : 'Automatski način je uključen.');
+}
+
 function bindControls() {
   document.querySelectorAll('[data-target][data-action]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -1423,15 +1555,8 @@ function bindControls() {
     });
   });
 
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      try {
-        await sendCommand('automation', button.dataset.mode);
-      } catch (error) {
-        showToast(error.message);
-      }
-    });
-  });
+  dom.autoModeButton.addEventListener('click', () => updateAutomationMode('AUTO').catch((error) => showToast(error.message)));
+  dom.manualModeButton.addEventListener('click', () => updateAutomationMode('MANUAL').catch((error) => showToast(error.message)));
 
   dom.windowSlider.addEventListener('input', () => {
     dom.windowSliderValue.textContent = formatPercent(dom.windowSlider.value);
@@ -1455,7 +1580,7 @@ function bindControls() {
           body: JSON.stringify({
             rainDetected: dom.rainToggle.checked,
             rainIntensity: dom.rainToggle.checked ? 70 : 0,
-            rainRiskPercent: Number(dom.rainProbabilityInput.value),
+            rainProbability: Number(dom.rainProbabilityInput.value),
             day: dom.dayNightToggle.checked ? 1 : 0
           })
         });
@@ -1521,37 +1646,6 @@ function bindControls() {
     await loadSelectedDashboardRoomTelemetry();
   });
 
-  dom.simulationAutoButton.addEventListener('click', async () => {
-    if (!selectedDashboardRoomId) {
-      return;
-    }
-    try {
-      currentRoomSimulation = await api(`/api/rooms/${selectedDashboardRoomId}/simulation/mode`, {
-        method: 'PATCH',
-        body: JSON.stringify({ mode: 'AUTO' })
-      });
-      setRoomSimulationUi(selectedDashboardRoom());
-      showToast('Simulacija sobe je u AUTO načinu.');
-    } catch (error) {
-      showToast(error.message);
-    }
-  });
-
-  dom.simulationManualButton.addEventListener('click', async () => {
-    if (!selectedDashboardRoomId) {
-      return;
-    }
-    try {
-      currentRoomSimulation = await api(`/api/rooms/${selectedDashboardRoomId}/simulation/mode`, {
-        method: 'PATCH',
-        body: JSON.stringify({ mode: 'MANUAL' })
-      });
-      setRoomSimulationUi(selectedDashboardRoom());
-      showToast('Simulacija sobe je u ručnom načinu.');
-    } catch (error) {
-      showToast(error.message);
-    }
-  });
 }
 
 async function boot() {

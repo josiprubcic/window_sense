@@ -33,17 +33,41 @@ public class RuntimeState {
         public String source;
         public String title;
         public String details;
+        public String roomId;
+        public String roomName;
+        public String deviceId;
+        public String deviceName;
+        public String reason;
 
         public Event() {
         }
 
         public Event(String level, String source, String title, String details) {
+            this(level, source, title, details, null, null, null, null, null);
+        }
+
+        public Event(
+                String level,
+                String source,
+                String title,
+                String details,
+                String roomId,
+                String roomName,
+                String deviceId,
+                String deviceName,
+                String reason
+        ) {
             this.id = Ids.eventId();
             this.ts = now();
             this.level = level;
             this.source = source;
             this.title = title;
             this.details = details;
+            this.roomId = roomId;
+            this.roomName = roomName;
+            this.deviceId = deviceId;
+            this.deviceName = deviceName;
+            this.reason = reason;
         }
     }
 

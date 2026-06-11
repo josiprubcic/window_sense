@@ -399,6 +399,13 @@ function telemetryValue(telemetry, key, formatter = (value) => value) {
   return formatter(telemetry[key]);
 }
 
+function rainProbabilityValue(telemetry) {
+  if (!telemetry) {
+    return 0;
+  }
+  return Number(telemetry.rainProbability ?? telemetry.rainRiskPercent) || 0;
+}
+
 function deviceTelemetryItems(device) {
   const telemetry = device?.telemetry || {};
   const items = [];
@@ -501,7 +508,7 @@ function renderRoomTelemetry(room) {
   const rows = [
     ['Kiša', telemetryValue(telemetry, 'rainDetected', (value) => value ? 'Pada' : 'Ne pada')],
     ['Intenzitet kiše', telemetryValue(telemetry, 'rainIntensity', (value) => `${Math.round(Number(value))}`)],
-    ['Rizik kiše', telemetryValue(telemetry, 'rainRiskPercent', (value) => formatPercent(value))],
+    ['Rizik kiše', formatPercent(rainProbabilityValue(telemetry))],
     ['Svjetlo', telemetryValue(telemetry, 'lux', (value) => formatLux(value))],
     ['Temperatura', telemetryValue(telemetry, 'indoorTempC', (value) => formatTemp(value))],
     ['Vjetar', telemetryValue(telemetry, 'windKmh', (value) => `${Math.round(Number(value))} km/h`)],
@@ -937,7 +944,7 @@ function resetDashboardControlValues() {
 }
 
 function syncRoomDashboardInputs(telemetry) {
-  const rainRisk = Number(telemetry.rainRiskPercent) || 0;
+  const rainRisk = rainProbabilityValue(telemetry);
   const lux = Number(telemetry.lux) || 0;
   const indoorTemp = Number(telemetry.indoorTempC) || 0;
   const wind = Number(telemetry.windKmh) || 0;
@@ -1411,7 +1418,7 @@ function renderDashboardTelemetry(room, telemetryResponse, options = {}) {
 
   const isVirtual = dashboardTelemetry?.isVirtual !== false;
   const rainDetected = Boolean(telemetry.rainDetected);
-  const rainRisk = Number(telemetry.rainRiskPercent) || 0;
+  const rainRisk = rainProbabilityValue(telemetry);
   const rainIntensity = Number(telemetry.rainIntensity) || 0;
   const lux = Number(telemetry.lux) || 0;
   const indoorTemp = Number(telemetry.indoorTempC) || 0;
@@ -1548,7 +1555,7 @@ function bindControls() {
             rainDetected: dom.rainToggle.checked,
             rainIntensity: dom.rainToggle.checked ? 70 : 0,
             lux: Number(dom.luxInput.value),
-            rainRiskPercent: Number(dom.rainProbabilityInput.value),
+            rainProbability: Number(dom.rainProbabilityInput.value),
             windKmh: Number(dom.windInput.value),
             indoorTempC: Number(dom.temperatureInput.value)
           })

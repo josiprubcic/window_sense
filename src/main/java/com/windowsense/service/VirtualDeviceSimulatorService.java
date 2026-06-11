@@ -196,17 +196,21 @@ public class VirtualDeviceSimulatorService {
     private Map<String, Object> ruleChainRuntimeSharedAttributes(Map<String, Object> payload) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         Object rainProbability = payload.get("rainProbability");
-        if (rainProbability == null) {
-            rainProbability = payload.get("rainRiskPercent");
-        }
         if (rainProbability != null) {
-            attributes.put("rainProbability", rainProbability);
+            attributes.put("rainProbability", integerAttribute(rainProbability));
         }
         Object day = payload.get("day");
         if (day != null) {
-            attributes.put("day", day);
+            attributes.put("day", integerAttribute(day));
         }
         return attributes;
+    }
+
+    private int integerAttribute(Object value) {
+        if (value instanceof Number number) {
+            return (int) Math.round(number.doubleValue());
+        }
+        return (int) Math.round(Double.parseDouble(value.toString()));
     }
 
     private boolean isActiveVirtualDevice(WindowDevice device) {

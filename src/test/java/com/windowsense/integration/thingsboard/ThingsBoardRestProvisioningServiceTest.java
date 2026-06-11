@@ -12,6 +12,7 @@ import com.windowsense.integration.thingsboard.RoomDeviceDeprovisioningRequest;
 import com.windowsense.integration.thingsboard.ThingsBoardRestProvisioningService;
 import com.windowsense.integration.thingsboard.VirtualRoomDeprovisioningRequest;
 import com.windowsense.integration.thingsboard.VirtualRoomProvisioningRequest;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -107,6 +108,7 @@ class ThingsBoardRestProvisioningServiceTest {
     }
 
     @Test
+    @Tag("core")
     void syncRoomAutomationAttributesWritesSharedThresholdsUsedByRuleChain() {
         TestContext context = context(ProvisioningAuthMode.API_KEY);
         context.properties.getThingsBoard().setApiKey("provisioning-api-key");
@@ -118,8 +120,9 @@ class ThingsBoardRestProvisioningServiceTest {
                         {
                           "roomId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
                           "roomName": "Kuhinja",
-                          "rainThreshold": 55.0,
-                          "desiredRainProbability": 55.0
+                          "rainThreshold": 55,
+                          "desiredRainProbability": 55,
+                          "manualMode": false
                         }
                         """, true))
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
@@ -128,13 +131,15 @@ class ThingsBoardRestProvisioningServiceTest {
                 ROOM_ID,
                 "Kuhinja",
                 "device-id",
-                55.0
+                55.0,
+                false
         ));
 
         context.server.verify();
     }
 
     @Test
+    @Tag("core")
     void syncDeviceSharedAttributesWritesRuntimeValuesUsedByRuleChain() {
         TestContext context = context(ProvisioningAuthMode.API_KEY);
         context.properties.getThingsBoard().setApiKey("provisioning-api-key");
@@ -144,7 +149,7 @@ class ThingsBoardRestProvisioningServiceTest {
                 .andExpect(header("X-Authorization", "ApiKey provisioning-api-key"))
                 .andExpect(content().json("""
                         {
-                          "rainProbability": 31.0
+                          "rainProbability": 31
                         }
                         """, true))
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));

@@ -93,12 +93,15 @@ public class RoomAutomationEvaluator {
     private void logAutomationDecisions(Room room, WindowDevice device, List<Decision> decisions) {
         runtimeStateRepository.withState(state -> {
             for (Decision decision : decisions) {
-                eventLogService.addEvent(
+                eventLogService.addRoomEvent(
                         state,
                         "info",
                         "room-automation",
                         "Automatska odluka: " + targetLabel(decision.target()) + "/" + actionLabel(decision.action()),
-                        room.getName() + " / " + device.getName() + ": " + decision.reason()
+                        room.getName() + " / " + device.getName() + ": " + decision.reason(),
+                        room,
+                        device,
+                        decision.reason()
                 );
             }
             return null;

@@ -14,6 +14,7 @@ import com.windowsense.service.EventLogService;
 import com.windowsense.entity.AppUser;
 import com.windowsense.service.VirtualDeviceRpcHandler;
 import com.windowsense.service.VirtualDeviceRpcResult;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("core")
 class VirtualDeviceRpcHandlerTest {
 
     private final WindowDeviceRepository windowDeviceRepository = mock(WindowDeviceRepository.class);
@@ -104,7 +106,7 @@ class VirtualDeviceRpcHandlerTest {
     }
 
     @Test
-    void appliesSetAngleRpcToBlindsOnlyDeviceAsOpenAngle() {
+    void appliesSetAngleRpcToBlindsOnlyDeviceAsClosedAngle() {
         WindowDevice device = virtualDevice("Virtualni roleta", Set.of(DeviceCapability.BLINDS_CONTROL));
         device.updateSimulationTelemetry(false, 0, 10, 42000, 24, 12, 65, 20);
         when(windowDeviceRepository.findById(device.getId())).thenReturn(Optional.of(device));
@@ -115,22 +117,22 @@ class VirtualDeviceRpcHandlerTest {
                 Map.of("value", 90)
         );
 
-        assertThat(device.getSimBlindClosedPercent()).isEqualTo(0.0);
+        assertThat(device.getSimBlindClosedPercent()).isEqualTo(100.0);
         assertThat(device.getSimWindowOpenPercent()).isEqualTo(65.0);
         assertThat(result.response())
                 .containsEntry("status", "EXECUTED")
                 .containsEntry("target", "blinds")
                 .containsEntry("action", "setAngle")
-                .containsEntry("position", 0.0);
+                .containsEntry("position", 100.0);
         assertThat(result.changed()).isTrue();
         assertThat(result.telemetry())
-                .containsEntry("blindClosedPercent", 0.0)
+                .containsEntry("blindClosedPercent", 100.0)
                 .doesNotContainKey("windowOpenPercent");
         assertThat(runtimeStateRepository.getState().events)
                 .anySatisfy(event -> {
                     assertThat(event.title).isEqualTo("Rule chain odluka: blinds/setAngle");
                     assertThat(event.details)
-                            .contains("Akcija: postavi kut rolete na 0% zatvoreno")
+                            .contains("Akcija: postavi kut rolete na 100% zatvoreno")
                             .contains("rainProbability=10%");
                 });
     }
@@ -138,7 +140,7 @@ class VirtualDeviceRpcHandlerTest {
     @Test
     void ignoresSetAngleRpcWhenTargetPositionAlreadyApplied() {
         WindowDevice device = virtualDevice("Virtualni roleta", Set.of(DeviceCapability.BLINDS_CONTROL));
-        device.updateSimulationTelemetry(false, 0, 10, 42000, 24, 12, 65, 0);
+        device.updateSimulationTelemetry(false, 0, 10, 42000, 24, 12, 65, 100);
         when(windowDeviceRepository.findById(device.getId())).thenReturn(Optional.of(device));
         int eventCount = runtimeStateRepository.getState().events.size();
 
@@ -149,7 +151,7 @@ class VirtualDeviceRpcHandlerTest {
         );
 
         assertThat(result.changed()).isFalse();
-        assertThat(device.getSimBlindClosedPercent()).isEqualTo(0.0);
+        assertThat(device.getSimBlindClosedPercent()).isEqualTo(100.0);
         assertThat(runtimeStateRepository.getState().events).hasSize(eventCount);
     }
 

@@ -1,6 +1,7 @@
 package com.windowsense.repository;
 
 import com.windowsense.entity.WindowDevice;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -10,6 +11,7 @@ import java.util.UUID;
 
 public interface WindowDeviceRepository extends JpaRepository<WindowDevice, UUID> {
 
+    @EntityGraph(attributePaths = "room")
     Optional<WindowDevice> findByTbDeviceId(String tbDeviceId);
 
     Optional<WindowDevice> findByPhysicalHardwareId(String physicalHardwareId);

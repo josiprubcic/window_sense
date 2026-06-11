@@ -94,10 +94,10 @@ public class SecurityConfig {
                 .toUriString();
 
         return UriComponentsBuilder
-                .fromUriString(oidc.getIssuerUri())
+                .fromUriString(oidc.getIssuerUri().replaceAll("/+$", ""))
                 .path("/v2/logout")
-                .queryParam("client_id", oidc.getClientId())
                 .queryParam("returnTo", returnTo)
+                .queryParam("client_id", oidc.getClientId())
                 .build()
                 .toUriString();
     }

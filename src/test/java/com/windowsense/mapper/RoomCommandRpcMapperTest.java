@@ -2,21 +2,23 @@ package com.windowsense.mapper;
 
 import com.windowsense.entity.RuntimeState;
 import com.windowsense.mapper.RoomCommandRpcMapper;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Tag("core")
 class RoomCommandRpcMapperTest {
 
     private final RoomCommandRpcMapper mapper = new RoomCommandRpcMapper();
 
     @Test
     void mapsWindowCommands() {
-        assertRpcNoParams(command("window", "open", null), "openWindow");
-        assertRpcNoParams(command("window", "close", null), "closeWindow");
-        assertRpcWithPosition(command("window", "setPosition", 42), "setWindowPosition", 42);
+        assertRpcWithPosition(command("window", "open", null), "setAngle", 90);
+        assertRpcWithPosition(command("window", "close", null), "setAngle", 0);
+        assertRpcWithPosition(command("window", "setPosition", 50), "setAngle", 45);
 
         RuntimeState.Command stop = command("window", "stop", null);
         var mapped = mapper.toRpc(stop);
@@ -26,9 +28,9 @@ class RoomCommandRpcMapperTest {
 
     @Test
     void mapsBlindsCommands() {
-        assertRpcNoParams(command("blinds", "open", null), "openBlinds");
-        assertRpcNoParams(command("blinds", "close", null), "closeBlinds");
-        assertRpcWithPosition(command("blinds", "setPosition", 85), "setAngle", 85);
+        assertRpcWithPosition(command("blinds", "open", null), "setAngle", 0);
+        assertRpcWithPosition(command("blinds", "close", null), "setAngle", 90);
+        assertRpcWithPosition(command("blinds", "setPosition", 85), "setAngle", 76.5);
 
         RuntimeState.Command stop = command("blinds", "stop", null);
         var mapped = mapper.toRpc(stop);

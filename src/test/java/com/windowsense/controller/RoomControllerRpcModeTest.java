@@ -5,6 +5,7 @@ import com.windowsense.integration.thingsboard.ThingsBoardRpcRequest;
 import com.windowsense.integration.thingsboard.ThingsBoardRpcResult;
 import com.windowsense.integration.thingsboard.ThingsBoardRpcService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Tag("core")
 class RoomControllerRpcModeTest {
 
     @Autowired
@@ -105,8 +107,8 @@ class RoomControllerRpcModeTest {
 
         ArgumentCaptor<ThingsBoardRpcRequest> requestCaptor = ArgumentCaptor.forClass(ThingsBoardRpcRequest.class);
         verify(rpcService).sendTwoWayRpc(eq("physical-device-kuhinja"), requestCaptor.capture());
-        assertThat(requestCaptor.getValue().method()).isEqualTo("closeWindow");
-        assertThat(requestCaptor.getValue().params()).isEqualTo(java.util.Map.of());
+        assertThat(requestCaptor.getValue().method()).isEqualTo("setAngle");
+        assertThat(requestCaptor.getValue().params()).isEqualTo(0.0);
     }
 
     private String createRoom(String name) throws Exception {

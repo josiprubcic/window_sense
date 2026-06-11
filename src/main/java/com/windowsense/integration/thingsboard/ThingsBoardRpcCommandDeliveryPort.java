@@ -17,6 +17,7 @@ import com.windowsense.mapper.RoomCommandRpcMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -30,6 +31,8 @@ public class ThingsBoardRpcCommandDeliveryPort implements CommandDeliveryPort {
     private final WindowSenseProperties properties;
     private final RuntimeStateRepository runtimeStateRepository;
     private final EventLogService eventLogService;
+    private final ThingsBoardRpcResponseTelemetryPublisher telemetryPublisher;
+    private final ThingsBoardProvisioningService provisioningService;
 
     public ThingsBoardRpcCommandDeliveryPort(
             CommandService commandService,
@@ -37,7 +40,9 @@ public class ThingsBoardRpcCommandDeliveryPort implements CommandDeliveryPort {
             ThingsBoardRpcService rpcService,
             WindowSenseProperties properties,
             RuntimeStateRepository runtimeStateRepository,
-            EventLogService eventLogService
+            EventLogService eventLogService,
+            ThingsBoardRpcResponseTelemetryPublisher telemetryPublisher,
+            ThingsBoardProvisioningService provisioningService
     ) {
         this.commandService = commandService;
         this.rpcMapper = rpcMapper;
@@ -45,6 +50,8 @@ public class ThingsBoardRpcCommandDeliveryPort implements CommandDeliveryPort {
         this.properties = properties;
         this.runtimeStateRepository = runtimeStateRepository;
         this.eventLogService = eventLogService;
+        this.telemetryPublisher = telemetryPublisher;
+        this.provisioningService = provisioningService;
     }
 
     @Override
@@ -62,6 +69,7 @@ public class ThingsBoardRpcCommandDeliveryPort implements CommandDeliveryPort {
         CommandResult prepared = commandService.prepareDeviceCommand(targetDevice.getTbDeviceId(), command);
         RuntimeState.Command queued = prepared.queued;
         MappedRoomCommandRpc mapped = rpcMapper.toRpc(queued);
+        syncManualDesiredAngle(targetDevice, mapped);
         ThingsBoardRpcResult result = rpcService.sendTwoWayRpc(
                 targetDevice.getTbDeviceId(),
                 new ThingsBoardRpcRequest(
@@ -71,7 +79,8 @@ public class ThingsBoardRpcCommandDeliveryPort implements CommandDeliveryPort {
                         properties.getCommands().getRpc().isPersistent()
                 )
         );
-        recordRpcEvent(queued, result);
+        recordRpcEvent(roomId, targetDevice, queued, result);
+        publishTelemetryFromRpcResponse(targetDevice, result);
 
         return new RoomCommandResponse(
                 queued.id,
@@ -90,14 +99,57 @@ public class ThingsBoardRpcCommandDeliveryPort implements CommandDeliveryPort {
         );
     }
 
-    private void recordRpcEvent(RuntimeState.Command command, ThingsBoardRpcResult result) {
+    private void syncManualDesiredAngle(WindowDevice targetDevice, MappedRoomCommandRpc mapped) {
+        if (!"setAngle".equals(mapped.method()) || !(mapped.params() instanceof Number angle)) {
+            return;
+        }
+        provisioningService.syncDeviceSharedAttributes(
+                targetDevice.getTbDeviceId(),
+                Map.of("desiredAngle", (int) Math.round(angle.doubleValue()))
+        );
+    }
+
+    private void publishTelemetryFromRpcResponse(WindowDevice targetDevice, ThingsBoardRpcResult result) {
+        if (!"EXECUTED".equals(result.status())) {
+            return;
+        }
+
+        Map<String, Object> telemetry = telemetryPayload(result.deviceResponse());
+        if (!telemetry.isEmpty()) {
+            telemetryPublisher.publish(targetDevice, telemetry);
+        }
+    }
+
+    private Map<String, Object> telemetryPayload(Map<String, Object> deviceResponse) {
+        Map<String, Object> telemetry = new LinkedHashMap<>();
+        copyTelemetryValue(telemetry, deviceResponse, "windowOpenPercent");
+        copyTelemetryValue(telemetry, deviceResponse, "blindClosedPercent");
+        return telemetry;
+    }
+
+    private void copyTelemetryValue(Map<String, Object> telemetry, Map<String, Object> deviceResponse, String key) {
+        if (deviceResponse == null) {
+            return;
+        }
+        Object value = deviceResponse.get(key);
+        if (value != null) {
+            telemetry.put(key, value);
+        }
+    }
+
+    private void recordRpcEvent(UUID roomId, WindowDevice targetDevice, RuntimeState.Command command, ThingsBoardRpcResult result) {
         runtimeStateRepository.withState(state -> {
             eventLogService.addEvent(
                     state,
                     eventLevel(result.status()),
                     command.source,
                     "ThingsBoard RPC: " + command.target + "/" + command.action,
-                    "Status " + result.status() + " za uredjaj " + command.deviceId + "."
+                    "Status " + result.status() + " za uredjaj " + command.deviceId + ".",
+                    roomId == null ? null : roomId.toString(),
+                    targetDevice.getRoom() == null ? null : targetDevice.getRoom().getName(),
+                    targetDevice.getId() == null ? null : targetDevice.getId().toString(),
+                    targetDevice.getName(),
+                    "Rucna komanda poslana kroz ThingsBoard RPC"
             );
             state.updatedAt = RuntimeState.now();
             return null;

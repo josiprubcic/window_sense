@@ -895,7 +895,7 @@ class RoomControllerTest {
                                 {
                                   "rainDetected": true,
                                   "rainIntensity": 50,
-                                  "rainRiskPercent": 80,
+                                  "rainProbability": 80,
                                   "lux": 12000,
                                   "indoorTempC": 24.5,
                                   "windKmh": 20,
@@ -1018,7 +1018,7 @@ class RoomControllerTest {
                                 {
                                   "rainDetected": false,
                                   "rainIntensity": 0,
-                                  "rainRiskPercent": 10,
+                                  "rainProbability": 10,
                                   "lux": 24000,
                                   "indoorTempC": 22,
                                   "windKmh": 0,

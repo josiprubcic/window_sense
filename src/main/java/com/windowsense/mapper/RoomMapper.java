@@ -23,6 +23,7 @@ public class RoomMapper {
                 room.getId(),
                 room.getName(),
                 room.getTbAssetId(),
+                room.isManualMode(),
                 activeDevice,
                 room.getDevices().stream().map(this::toResponse).toList()
         );
@@ -38,6 +39,9 @@ public class RoomMapper {
                 device.getTbDeviceId(),
                 device.getPhysicalHardwareId(),
                 device.getPhysicalHardwareId(),
+                device.getDesiredAngleDay(),
+                device.getDesiredAngleNight(),
+                device.getDesiredAngleRain(),
                 device.getCapabilities().stream()
                         .map(Enum::name)
                         .collect(Collectors.toSet())

@@ -621,6 +621,66 @@ input[type="checkbox"] {
   color: var(--text);
 }
 
+.manual-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.device-angle-rules {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.device-angle-rule {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.device-angle-rule header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.device-angle-rule strong {
+  color: var(--text);
+}
+
+.device-angle-rule small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.device-angle-rule__fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.device-angle-rule__fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.device-angle-rule__fields input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .iot-panel dl {
   display: grid;
   gap: 10px;
@@ -681,6 +741,11 @@ input[type="checkbox"] {
 .event-list small {
   color: var(--muted);
   line-height: 1.35;
+}
+
+.event-list .event-reason {
+  color: var(--text);
+  font-weight: 700;
 }
 
 .room-form {
@@ -925,7 +990,8 @@ input[type="checkbox"] {
 
   .overview-grid,
   .dashboard-device-states,
-  .threshold-grid {
+  .threshold-grid,
+  .device-angle-rule__fields {
     grid-template-columns: 1fr;
   }
 

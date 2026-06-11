@@ -144,6 +144,20 @@ public class RoomController {
         return roomService.updateAutomationThresholds(roomId, payload);
     }
 
+    @PatchMapping("/{roomId}/automation/mode")
+    public RoomResponse updateAutomationMode(@PathVariable UUID roomId, @RequestBody Map<String, Object> payload) {
+        return roomService.updateAutomationMode(roomId, payload);
+    }
+
+    @PutMapping("/{roomId}/devices/{deviceId}/automation/angles")
+    public RoomResponse updateDeviceAutomationAngles(
+            @PathVariable UUID roomId,
+            @PathVariable UUID deviceId,
+            @RequestBody Map<String, Object> payload
+    ) {
+        return roomService.updateDeviceAutomationAngles(roomId, deviceId, payload);
+    }
+
     @DeleteMapping("/{roomId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteRoom(@PathVariable UUID roomId) {

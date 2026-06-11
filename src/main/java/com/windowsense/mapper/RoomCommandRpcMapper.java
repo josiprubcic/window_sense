@@ -9,48 +9,46 @@ import java.util.Map;
 public class RoomCommandRpcMapper {
 
     public MappedRoomCommandRpc toRpc(RuntimeState.Command command) {
-        String method = switch (command.target) {
-            case "window" -> windowMethod(command.action);
-            case "blinds" -> blindsMethod(command.action);
+        return switch (command.target) {
+            case "window" -> windowRpc(command);
+            case "blinds" -> blindsRpc(command);
             default -> throw new IllegalArgumentException("NO_DEVICE_FOR_CAPABILITY");
         };
-
-        Object params = switch (method) {
-            case "setAngle" -> anglePosition(command);
-            case "setWindowPosition", "setBlindsPosition" -> requiredPosition(command);
-            default -> Map.of();
-        };
-        return new MappedRoomCommandRpc(method, params);
     }
 
-    private String windowMethod(String action) {
-        return switch (action) {
-            case "open" -> "openWindow";
-            case "close" -> "closeWindow";
-            case "setPosition" -> "setWindowPosition";
-            case "stop" -> "stopWindow";
+    private MappedRoomCommandRpc windowRpc(RuntimeState.Command command) {
+        return switch (command.action) {
+            case "open" -> setAngle(90);
+            case "close" -> setAngle(0);
+            case "setPosition" -> setAngle(openPercentToAngle(requiredPosition(command)));
+            case "stop" -> new MappedRoomCommandRpc("stopWindow", Map.of());
             default -> throw new IllegalArgumentException("Nepoznata akcija komande.");
         };
     }
 
-    private String blindsMethod(String action) {
-        return switch (action) {
-            case "open" -> "openBlinds";
-            case "close" -> "closeBlinds";
-            case "setPosition" -> "setAngle";
-            case "stop" -> "stopBlinds";
+    private MappedRoomCommandRpc blindsRpc(RuntimeState.Command command) {
+        return switch (command.action) {
+            case "open" -> setAngle(0);
+            case "close" -> setAngle(90);
+            case "setPosition" -> setAngle(blindClosedPercentToAngle(requiredPosition(command)));
+            case "stop" -> new MappedRoomCommandRpc("stopBlinds", Map.of());
             default -> throw new IllegalArgumentException("Nepoznata akcija komande.");
         };
+    }
+
+    private MappedRoomCommandRpc setAngle(double angle) {
+        return new MappedRoomCommandRpc("setAngle", angle);
+    }
+
+    private double openPercentToAngle(double openPercent) {
+        return openPercent / 100.0 * 90.0;
+    }
+
+    private double blindClosedPercentToAngle(double closedPercent) {
+        return closedPercent / 100.0 * 90.0;
     }
 
     private Double requiredPosition(RuntimeState.Command command) {
-        if (command.positionPercent == null) {
-            throw new IllegalArgumentException("Pozicija je obavezna za RPC komandu.");
-        }
-        return command.positionPercent;
-    }
-
-    private Double anglePosition(RuntimeState.Command command) {
         if (command.positionPercent == null) {
             throw new IllegalArgumentException("Pozicija je obavezna za RPC komandu.");
         }

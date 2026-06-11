@@ -269,8 +269,9 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
                         Map.of(
                                 "roomId", request.roomId().toString(),
                                 "roomName", request.roomName(),
-                                "rainThreshold", request.rainThreshold(),
-                                "desiredRainProbability", request.rainThreshold()
+                                "rainThreshold", integerAttribute(request.rainThreshold()),
+                                "desiredRainProbability", integerAttribute(request.rainThreshold()),
+                                "manualMode", request.manualMode()
                         )
                 );
                 return null;
@@ -298,7 +299,7 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
                         "DEVICE",
                         tbDeviceId,
                         "SHARED_SCOPE",
-                        attributes
+                        normalizeSharedAttributes(attributes)
                 );
                 return null;
             });
@@ -960,6 +961,35 @@ public class ThingsBoardRestProvisioningService implements ThingsBoardProvisioni
                 .body(attributes)
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    private Map<String, Object> normalizeSharedAttributes(Map<String, Object> attributes) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
+            normalized.put(entry.getKey(), sharedAttributeValue(entry.getKey(), entry.getValue()));
+        }
+        return normalized;
+    }
+
+    private Object sharedAttributeValue(String key, Object value) {
+        return switch (key) {
+            case "rainThreshold",
+                    "desiredRainProbability",
+                    "rainProbability",
+                    "day",
+                    "desiredAngle",
+                    "desiredAngleDay",
+                    "desiredAngleNight",
+                    "desiredAngleRain" -> integerAttribute(value);
+            default -> value;
+        };
+    }
+
+    private static int integerAttribute(Object value) {
+        if (value instanceof Number number) {
+            return (int) Math.round(number.doubleValue());
+        }
+        return (int) Math.round(Double.parseDouble(value.toString()));
     }
 
     private void deleteIfExists(String authorization, String pathAndQuery) {

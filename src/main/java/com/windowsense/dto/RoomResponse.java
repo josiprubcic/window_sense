@@ -7,6 +7,7 @@ public record RoomResponse(
         UUID id,
         String name,
         String tbAssetId,
+        boolean manualMode,
         WindowDeviceResponse activeDevice,
         List<WindowDeviceResponse> devices
 ) {

@@ -22,4 +22,13 @@ public class RuntimeStateService {
     public List<RuntimeState.Event> events() {
         return repository.getState().events;
     }
+
+    public List<RuntimeState.Event> events(String roomId) {
+        if (roomId == null || roomId.isBlank()) {
+            return events();
+        }
+        return repository.getState().events.stream()
+                .filter(event -> roomId.equals(event.roomId))
+                .toList();
+    }
 }

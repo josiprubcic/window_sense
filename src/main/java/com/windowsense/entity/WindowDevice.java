@@ -105,6 +105,15 @@ public class WindowDevice {
     @Column(name = "sim_last_updated_at", nullable = false)
     private Instant simLastUpdatedAt = Instant.now();
 
+    @Column(name = "desired_angle_day", nullable = false)
+    private double desiredAngleDay = 90;
+
+    @Column(name = "desired_angle_night", nullable = false)
+    private double desiredAngleNight = 0;
+
+    @Column(name = "desired_angle_rain", nullable = false)
+    private double desiredAngleRain = 15;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -264,6 +273,24 @@ public class WindowDevice {
         return simLastUpdatedAt;
     }
 
+    public double getDesiredAngleDay() {
+        return desiredAngleDay;
+    }
+
+    public double getDesiredAngleNight() {
+        return desiredAngleNight;
+    }
+
+    public double getDesiredAngleRain() {
+        return desiredAngleRain;
+    }
+
+    public void updateDesiredAngles(double day, double night, double rain) {
+        this.desiredAngleDay = clamp(day, 0, 90);
+        this.desiredAngleNight = clamp(night, 0, 90);
+        this.desiredAngleRain = clamp(rain, 0, 90);
+    }
+
     public void updateSimulationMode(SimulationMode simulationMode) {
         this.simulationMode = simulationMode;
         this.simLastUpdatedAt = Instant.now();
@@ -345,4 +372,5 @@ public class WindowDevice {
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
+
 }

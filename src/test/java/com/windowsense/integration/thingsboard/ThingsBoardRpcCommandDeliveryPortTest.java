@@ -13,6 +13,7 @@ import com.windowsense.integration.thingsboard.ThingsBoardRpcCommandDeliveryPort
 import com.windowsense.integration.thingsboard.ThingsBoardRpcRequest;
 import com.windowsense.integration.thingsboard.ThingsBoardRpcResult;
 import com.windowsense.integration.thingsboard.ThingsBoardRpcService;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -27,10 +28,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@Tag("core")
 class ThingsBoardRpcCommandDeliveryPortTest {
 
     private final CommandService commandService = mock(CommandService.class);
     private final ThingsBoardRpcService rpcService = mock(ThingsBoardRpcService.class);
+    private final ThingsBoardRpcResponseTelemetryPublisher telemetryPublisher = mock(ThingsBoardRpcResponseTelemetryPublisher.class);
+    private final ThingsBoardProvisioningService provisioningService = mock(ThingsBoardProvisioningService.class);
     private final WindowSenseProperties properties = rpcProperties();
     private final RuntimeStateRepository runtimeStateRepository = new RuntimeStateRepository();
     private final ThingsBoardRpcCommandDeliveryPort port = new ThingsBoardRpcCommandDeliveryPort(
@@ -39,7 +43,9 @@ class ThingsBoardRpcCommandDeliveryPortTest {
             rpcService,
             properties,
             runtimeStateRepository,
-            new EventLogService()
+            new EventLogService(),
+            telemetryPublisher,
+            provisioningService
     );
 
     @Test
@@ -48,26 +54,46 @@ class ThingsBoardRpcCommandDeliveryPortTest {
         when(commandService.prepareDeviceCommand(eq("tb-device-123"), any(CommandRequest.class)))
                 .thenReturn(CommandResult.command("window", "close", 0.0, prepared));
         when(rpcService.sendTwoWayRpc(eq("tb-device-123"), any(ThingsBoardRpcRequest.class)))
-                .thenReturn(ThingsBoardRpcResult.executed(Map.of("status", "EXECUTED", "windowPosition", 0)));
+                .thenReturn(ThingsBoardRpcResult.executed(Map.of("status", "EXECUTED", "windowOpenPercent", 0)));
+        WindowDevice device = WindowDevice.physicalDevice("ESP32", "tb-device-123");
 
         var response = port.deliver(
                 java.util.UUID.randomUUID(),
-                WindowDevice.physicalDevice("ESP32", "tb-device-123"),
+                device,
                 new CommandRequest("window", "close", null, "test")
         );
 
         assertThat(response.status()).isEqualTo("EXECUTED");
         assertThat(response.delivery()).isEqualTo("THINGSBOARD_RPC");
         assertThat(response.tbDeviceId()).isEqualTo("tb-device-123");
-        assertThat(response.deviceResponse()).containsEntry("windowPosition", 0);
+        assertThat(response.deviceResponse()).containsEntry("windowOpenPercent", 0);
 
         ArgumentCaptor<ThingsBoardRpcRequest> requestCaptor = ArgumentCaptor.forClass(ThingsBoardRpcRequest.class);
         verify(rpcService).sendTwoWayRpc(eq("tb-device-123"), requestCaptor.capture());
-        assertThat(requestCaptor.getValue().method()).isEqualTo("closeWindow");
-        assertThat(requestCaptor.getValue().params()).isEqualTo(java.util.Map.of());
+        verify(provisioningService).syncDeviceSharedAttributes("tb-device-123", Map.of("desiredAngle", 0));
+        verify(telemetryPublisher).publish(device, Map.of("windowOpenPercent", 0));
+        assertThat(requestCaptor.getValue().method()).isEqualTo("setAngle");
+        assertThat(requestCaptor.getValue().params()).isEqualTo(0.0);
         assertThat(requestCaptor.getValue().timeout()).isEqualTo(15000);
         assertThat(requestCaptor.getValue().persistent()).isFalse();
         assertThat(runtimeStateRepository.getState().commandQueue).isEmpty();
+    }
+
+    @Test
+    void syncsManualDesiredAngleBeforeSetPositionRpc() {
+        RuntimeState.Command prepared = new RuntimeState.Command("tb-device-123", "window", "setPosition", 50.0, "test");
+        when(commandService.prepareDeviceCommand(eq("tb-device-123"), any(CommandRequest.class)))
+                .thenReturn(CommandResult.command("window", "setPosition", 50.0, prepared));
+        when(rpcService.sendTwoWayRpc(eq("tb-device-123"), any(ThingsBoardRpcRequest.class)))
+                .thenReturn(ThingsBoardRpcResult.executed(Map.of("status", "EXECUTED", "windowOpenPercent", 50)));
+
+        port.deliver(
+                java.util.UUID.randomUUID(),
+                WindowDevice.physicalDevice("ESP32", "tb-device-123"),
+                new CommandRequest("window", "setPosition", 50.0, "test")
+        );
+
+        verify(provisioningService).syncDeviceSharedAttributes("tb-device-123", Map.of("desiredAngle", 45));
     }
 
     @Test
@@ -102,6 +128,29 @@ class ThingsBoardRpcCommandDeliveryPortTest {
         assertThat(failed.status()).isEqualTo("FAILED");
         assertThat(failed.deviceResponse()).containsEntry("error", "HTTP 500");
         assertThat(runtimeStateRepository.getState().commandQueue).isEmpty();
+        verify(telemetryPublisher, never()).publish(any(), any());
+    }
+
+    @Test
+    void publishesOnlyCanonicalTelemetryKeysFromRpcResponse() {
+        RuntimeState.Command prepared = new RuntimeState.Command("tb-device-123", "blinds", "close", 100.0, "test");
+        when(commandService.prepareDeviceCommand(eq("tb-device-123"), any(CommandRequest.class)))
+                .thenReturn(CommandResult.command("blinds", "close", 100.0, prepared));
+        when(rpcService.sendTwoWayRpc(eq("tb-device-123"), any(ThingsBoardRpcRequest.class)))
+                .thenReturn(ThingsBoardRpcResult.executed(Map.of(
+                        "status", "EXECUTED",
+                        "reason", "done",
+                        "blindClosedPercent", 100
+                )));
+        WindowDevice device = WindowDevice.physicalDevice("ESP32", "tb-device-123");
+
+        port.deliver(
+                java.util.UUID.randomUUID(),
+                device,
+                new CommandRequest("blinds", "close", null, "test")
+        );
+
+        verify(telemetryPublisher).publish(device, Map.of("blindClosedPercent", 100));
     }
 
     @Test
@@ -122,7 +171,9 @@ class ThingsBoardRpcCommandDeliveryPortTest {
                 rpcService,
                 disabledProperties,
                 runtimeStateRepository,
-                new EventLogService()
+                new EventLogService(),
+                telemetryPublisher,
+                provisioningService
         );
 
         assertThatThrownBy(() -> disabledPort.deliver(
