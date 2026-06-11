@@ -18,6 +18,7 @@ public interface WindowDeviceRepository extends JpaRepository<WindowDevice, UUID
             select device
             from WindowDevice device
             join fetch device.room room
+            join fetch room.home home
             where device.deviceType = com.windowsense.entity.DeviceType.VIRTUAL
               and device.status = com.windowsense.entity.DeviceStatus.ACTIVE
               and device.virtual = true
@@ -28,6 +29,7 @@ public interface WindowDeviceRepository extends JpaRepository<WindowDevice, UUID
             select device
             from WindowDevice device
             join fetch device.room room
+            join fetch room.home home
             where device.deviceType = com.windowsense.entity.DeviceType.VIRTUAL
               and device.status = com.windowsense.entity.DeviceStatus.ACTIVE
               and device.virtual = true
@@ -35,4 +37,17 @@ public interface WindowDeviceRepository extends JpaRepository<WindowDevice, UUID
               and device.tbDeviceTokenEncrypted <> ''
             """)
     List<WindowDevice> findActiveVirtualDevicesWithRoomAndToken();
+
+    @Query("""
+            select device
+            from WindowDevice device
+            join fetch device.room room
+            join fetch room.home home
+            where device.deviceType = com.windowsense.entity.DeviceType.PHYSICAL
+              and device.status = com.windowsense.entity.DeviceStatus.ACTIVE
+              and device.virtual = false
+              and device.tbDeviceTokenEncrypted is not null
+              and device.tbDeviceTokenEncrypted <> ''
+            """)
+    List<WindowDevice> findActivePhysicalDevicesWithRoomAndToken();
 }

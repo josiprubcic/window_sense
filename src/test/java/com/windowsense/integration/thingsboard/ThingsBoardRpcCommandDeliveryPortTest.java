@@ -64,8 +64,7 @@ class ThingsBoardRpcCommandDeliveryPortTest {
         ArgumentCaptor<ThingsBoardRpcRequest> requestCaptor = ArgumentCaptor.forClass(ThingsBoardRpcRequest.class);
         verify(rpcService).sendTwoWayRpc(eq("tb-device-123"), requestCaptor.capture());
         assertThat(requestCaptor.getValue().method()).isEqualTo("closeWindow");
-        assertThat(requestCaptor.getValue().params()).containsEntry("commandId", prepared.id);
-        assertThat(requestCaptor.getValue().params()).containsEntry("position", 0.0);
+        assertThat(requestCaptor.getValue().params()).isEqualTo(java.util.Map.of());
         assertThat(requestCaptor.getValue().timeout()).isEqualTo(15000);
         assertThat(requestCaptor.getValue().persistent()).isFalse();
         assertThat(runtimeStateRepository.getState().commandQueue).isEmpty();

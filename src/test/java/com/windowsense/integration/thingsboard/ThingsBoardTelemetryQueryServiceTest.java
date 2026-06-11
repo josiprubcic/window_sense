@@ -26,7 +26,7 @@ class ThingsBoardTelemetryQueryServiceTest {
 
     private static final String HOST = "https://thingsboard.example";
     private static final String TELEMETRY_URI = HOST + "/api/plugins/telemetry/DEVICE/device-id/values/timeseries?keys="
-            + "rainDetected,rainIntensity,rainRiskPercent,rainProbability,lux,lightLux,indoorTempC,windKmh,windKph,windowOpenPercent,blindClosedPercent,blindsPositionPercent,roomId,roomName,isVirtual";
+            + "rainDetected,rainIntensity,rainRiskPercent,rainProbability,windKmh,windKph,windowOpenPercent,blindClosedPercent,blindsPositionPercent,roomId,roomName,isVirtual";
 
     @Test
     void parsesLatestTelemetryResponse() {

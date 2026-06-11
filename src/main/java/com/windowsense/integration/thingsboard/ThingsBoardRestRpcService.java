@@ -44,7 +44,7 @@ public class ThingsBoardRestRpcService implements ThingsBoardRpcService {
 
         try {
             Map<String, Object> response = restClient.post()
-                    .uri(properties.getHost() + "/api/plugins/rpc/twoway/" + tbDeviceId)
+                    .uri(properties.getHost() + "/api/rpc/twoway/" + tbDeviceId)
                     .header(ThingsBoardAuthClient.AUTH_HEADER, authClient.authorizationHeader())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody(request))

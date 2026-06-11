@@ -48,7 +48,7 @@ public class PhysicalDeviceRegistrationService {
                 serialNumber,
                 null,
                 null,
-                List.of("window", "blinds", "rain", "lux", "temperature", "wind"),
+                List.of("window", "blinds", "rain", "wind"),
                 pairingCode,
                 accessToken
         ));

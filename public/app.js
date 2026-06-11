@@ -267,12 +267,20 @@ async function api(path, options = {}) {
     ...options
   });
 
-  const data = response.status === 204 ? null : await response.json();
+  const text = response.status === 204 ? '' : await response.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      data = { error: text };
+    }
+  }
   if (!response.ok) {
     const validationMessage = typeof data === 'object' && data !== null
       ? Object.values(data).find((value) => typeof value === 'string')
       : null;
-    throw new Error(apiErrorMessage(data.error || validationMessage || 'API zahtjev nije uspio.'));
+    throw new Error(apiErrorMessage(data?.error || validationMessage || 'API zahtjev nije uspio.'));
   }
 
   return data;
@@ -1542,9 +1550,7 @@ function bindControls() {
             lux: Number(dom.luxInput.value),
             rainRiskPercent: Number(dom.rainProbabilityInput.value),
             windKmh: Number(dom.windInput.value),
-            indoorTempC: Number(dom.temperatureInput.value),
-            windowOpenPercent: Number(dom.windowSlider.value),
-            blindClosedPercent: Number(dom.blindsSlider.value)
+            indoorTempC: Number(dom.temperatureInput.value)
           })
         });
         applyRoomActionResponse(currentRoomSimulation);

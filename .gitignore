@@ -10,6 +10,10 @@ target/
 !README.md
 !README.MD
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # Java build artifacts
 *.class
 *.jar

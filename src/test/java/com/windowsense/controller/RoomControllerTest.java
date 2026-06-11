@@ -32,7 +32,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "windowsense.security.oidc.enabled=false",
-        "windowsense.things-board.provisioning-enabled=false"
+        "windowsense.things-board.provisioning-enabled=false",
+        "windowsense.commands.physical-delivery=polling"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -899,7 +900,8 @@ class RoomControllerTest {
                                   "indoorTempC": 24.5,
                                   "windKmh": 20,
                                   "windowOpenPercent": 30,
-                                  "blindClosedPercent": 70
+                                  "blindClosedPercent": 90,
+                                  "day": 1
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -907,11 +909,9 @@ class RoomControllerTest {
                 .andExpect(jsonPath("$.telemetry.rainDetected").value(true))
                 .andExpect(jsonPath("$.telemetry.rainIntensity").value(50.0))
                 .andExpect(jsonPath("$.telemetry.rainRiskPercent").value(80.0))
-                .andExpect(jsonPath("$.telemetry.lux").value(12000.0))
-                .andExpect(jsonPath("$.telemetry.indoorTempC").value(24.5))
                 .andExpect(jsonPath("$.telemetry.windKmh").value(20.0))
                 .andExpect(jsonPath("$.telemetry.windowOpenPercent").value(0.0))
-                .andExpect(jsonPath("$.telemetry.blindClosedPercent").value(70.0))
+                .andExpect(jsonPath("$.telemetry.blindClosedPercent").value(90.0))
                 .andExpect(jsonPath("$.decisions[0].target").value("window"))
                 .andExpect(jsonPath("$.decisions[0].action").value("close"));
     }
@@ -978,7 +978,7 @@ class RoomControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deviceType").value("VIRTUAL"))
-                .andExpect(jsonPath("$.telemetry.lux").value(12000.0));
+                .andExpect(jsonPath("$.telemetry.windowOpenPercent").value(20.0));
     }
 
     @Test
@@ -988,7 +988,7 @@ class RoomControllerTest {
         mockMvc.perform(get("/api/rooms/{roomId}/automation/thresholds", roomId)
                         .with(user("auth0|window-user")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.thresholds.rainProbabilityClose").value(55.0));
+                .andExpect(jsonPath("$.thresholds.rainProbabilityClose").value(70.0));
 
         mockMvc.perform(put("/api/rooms/{roomId}/automation/thresholds", roomId)
                         .with(user("auth0|window-user"))
@@ -996,15 +996,13 @@ class RoomControllerTest {
                         .content("""
                                 {
                                   "rainProbabilityClose": 40,
-                                  "lightLuxShade": 62000,
-                                  "indoorTempShadeC": 27,
                                   "windKphClose": 35
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.thresholds.rainProbabilityClose").value(40.0))
-                .andExpect(jsonPath("$.thresholds.lightLuxShade").value(62000.0))
-                .andExpect(jsonPath("$.thresholds.indoorTempShadeC").value(27.0))
+                .andExpect(jsonPath("$.thresholds.lightLuxShade").doesNotExist())
+                .andExpect(jsonPath("$.thresholds.indoorTempShadeC").doesNotExist())
                 .andExpect(jsonPath("$.thresholds.windKphClose").value(35.0));
     }
 
@@ -1027,10 +1025,13 @@ class RoomControllerTest {
                                   "windowOpenPercent": 80,
                                   "blindClosedPercent": 20
                                 }
-                                """))
+                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.telemetry.windowOpenPercent").value(80.0))
-                .andExpect(jsonPath("$.decisions", hasSize(0)));
+                .andExpect(jsonPath("$.telemetry.blindClosedPercent").value(85.0))
+                .andExpect(jsonPath("$.decisions", hasSize(1)))
+                .andExpect(jsonPath("$.decisions[0].target").value("blinds"))
+                .andExpect(jsonPath("$.decisions[0].action").value("setPosition"));
 
         mockMvc.perform(put("/api/rooms/{roomId}/automation/thresholds", roomId)
                         .with(user("auth0|window-user"))

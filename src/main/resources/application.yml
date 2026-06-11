@@ -19,9 +19,12 @@ spring:
     resources:
       static-locations:
         - classpath:/static/
-        - file:public/
+        - file:frontend/dist/
 
 windowsense:
+  automation:
+    engine: ${WINDOWSENSE_AUTOMATION_ENGINE:thingsboard-rule-chain}
+    backend-fallback-enabled: ${WINDOWSENSE_AUTOMATION_BACKEND_FALLBACK_ENABLED:true}
   commands:
     physical-delivery: ${WINDOWSENSE_COMMANDS_PHYSICAL_DELIVERY:polling}
     rpc:
@@ -33,6 +36,7 @@ windowsense:
   virtual-simulator:
     enabled: ${VIRTUAL_SIMULATOR_ENABLED:false}
     publish-to-things-board: ${VIRTUAL_SIMULATOR_PUBLISH_TO_THINGSBOARD:false}
+    publish-physical-weather-to-things-board: ${VIRTUAL_SIMULATOR_PUBLISH_PHYSICAL_WEATHER_TO_THINGSBOARD:false}
     mqtt-rpc-enabled: ${VIRTUAL_SIMULATOR_MQTT_RPC_ENABLED:false}
     mqtt-reconnect-interval-ms: ${VIRTUAL_SIMULATOR_MQTT_RECONNECT_INTERVAL_MS:10000}
     interval-ms: ${VIRTUAL_SIMULATOR_INTERVAL_MS:5000}
@@ -51,6 +55,8 @@ windowsense:
     provisioning-enabled: ${THINGSBOARD_PROVISIONING_ENABLED:false}
     provisioning-auth-mode: ${THINGSBOARD_PROVISIONING_AUTH_MODE:password}
     delete-mode: ${THINGSBOARD_DELETE_MODE:soft}
+    rule-chains:
+      auto-sync: ${THINGSBOARD_RULE_CHAINS_AUTO_SYNC:true}
     username: ${THINGSBOARD_USERNAME:}
     password: ${THINGSBOARD_PASSWORD:}
     jwt-token: ${THINGSBOARD_JWT_TOKEN:}

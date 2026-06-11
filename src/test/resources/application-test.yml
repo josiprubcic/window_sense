@@ -12,7 +12,12 @@ spring:
     enabled: true
 
 windowsense:
+  automation:
+    engine: backend
   virtual-simulator:
     enabled: false
     publish-to-things-board: false
     mqtt-rpc-enabled: false
+  things-board:
+    rule-chains:
+      auto-sync: false

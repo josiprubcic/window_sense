@@ -47,7 +47,7 @@ public class Room {
     private double thresholdRainIntensityClose = 0;
 
     @Column(name = "threshold_rain_probability_close", nullable = false)
-    private double thresholdRainProbabilityClose = 55;
+    private double thresholdRainProbabilityClose = 70;
 
     @Column(name = "threshold_wind_kph_close", nullable = false)
     private double thresholdWindKphClose = 45;

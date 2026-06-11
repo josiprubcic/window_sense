@@ -8,8 +8,7 @@ public class AutomationInput {
     public double rainIntensity;
     public double rainProbability;
     public double windKph;
-    public double lightLux;
-    public double indoorTempC;
+    public int day = 1;
     public double windowOpenPercent;
     public double blindsPositionPercent;
     public AutomationThresholds thresholds = new AutomationThresholds();
@@ -20,8 +19,7 @@ public class AutomationInput {
         input.rainIntensity = 0;
         input.rainProbability = 18;
         input.windKph = 12;
-        input.lightLux = 42000;
-        input.indoorTempC = 24;
+        input.day = 1;
         input.windowOpenPercent = 65;
         input.blindsPositionPercent = 30;
         return input;

@@ -6,5 +6,5 @@ import java.util.Map;
 
 public interface TelemetryPublisher {
 
-    void publishTelemetry(WindowDevice device, Map<String, Object> payload);
+    boolean publishTelemetry(WindowDevice device, Map<String, Object> payload);
 }

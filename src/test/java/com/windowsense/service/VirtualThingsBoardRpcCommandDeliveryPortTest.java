@@ -70,9 +70,8 @@ class VirtualThingsBoardRpcCommandDeliveryPortTest {
 
         ArgumentCaptor<ThingsBoardRpcRequest> requestCaptor = ArgumentCaptor.forClass(ThingsBoardRpcRequest.class);
         verify(rpcService).sendTwoWayRpc(eq("tb-blinds-id"), requestCaptor.capture());
-        assertThat(requestCaptor.getValue().method()).isEqualTo("setBlindsPosition");
-        assertThat(requestCaptor.getValue().params()).containsEntry("position", 85.0);
-        assertThat(requestCaptor.getValue().params()).containsKey("commandId");
+        assertThat(requestCaptor.getValue().method()).isEqualTo("setAngle");
+        assertThat(requestCaptor.getValue().params()).isEqualTo(85.0);
         assertThat(runtimeStateRepository.getState().commandQueue).isEmpty();
     }
 

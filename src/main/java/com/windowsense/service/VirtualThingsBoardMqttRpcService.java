@@ -114,7 +114,10 @@ public class VirtualThingsBoardMqttRpcService {
             client.connect(options);
             client.subscribe(RPC_REQUEST_TOPIC, 1);
             clients.put(device.getId(), client);
-            log.info("Virtualni uredjaj {} spojen je na ThingsBoard MQTT RPC listener.", device.getId());
+            publish(client, TELEMETRY_TOPIC, telemetry(device));
+            log.info("Virtualni uredjaj {} spojen je na ThingsBoard MQTT RPC listener za ThingsBoard device {}.",
+                    device.getId(),
+                    device.getTbDeviceId());
         } catch (MqttException error) {
             log.warn("Virtualni MQTT RPC listener se nije uspio spojiti za uredjaj {}: {}.",
                     device.getId(),
@@ -163,10 +166,13 @@ public class VirtualThingsBoardMqttRpcService {
         Map<String, Object> rpc = parse(message);
         String method = stringValue(rpc.get("method"));
         Map<String, Object> params = params(rpc.get("params"));
+        log.info("Virtualni MQTT RPC listener primio je metodu {} za uredjaj {}.", method, localDeviceId);
         try {
             VirtualDeviceRpcResult result = rpcHandler.handle(localDeviceId, method, params);
             publish(client, RPC_RESPONSE_PREFIX + requestId, result.response());
-            publish(client, TELEMETRY_TOPIC, result.telemetry());
+            if (result.changed()) {
+                publish(client, TELEMETRY_TOPIC, result.telemetry());
+            }
         } catch (RuntimeException error) {
             publish(client, RPC_RESPONSE_PREFIX + requestId, Map.of(
                     "status", "FAILED",
@@ -206,9 +212,38 @@ public class VirtualThingsBoardMqttRpcService {
     private void publish(MqttClient client, String topic, Map<String, Object> payload) {
         try {
             client.publish(topic, objectMapper.writeValueAsBytes(payload), 1, false);
+        } catch (MqttException error) {
+            log.warn("Virtualni MQTT RPC listener nije uspio publishati na {}. reasonCode={}, message={}.",
+                    topic,
+                    error.getReasonCode(),
+                    error.getMessage());
         } catch (Exception error) {
             log.warn("Virtualni MQTT RPC listener nije uspio publishati na {}: {}.", topic, error.getClass().getSimpleName());
         }
+    }
+
+    private Map<String, Object> telemetry(WindowDevice device) {
+        Map<String, Object> telemetry = new LinkedHashMap<>();
+        telemetry.put("rainDetected", device.isSimRainDetected());
+        telemetry.put("rainIntensity", device.getSimRainIntensity());
+        telemetry.put("rainRiskPercent", device.getSimRainRiskPercent());
+        telemetry.put("rainProbability", device.getSimRainRiskPercent());
+        telemetry.put("windKmh", device.getSimWindKmh());
+        telemetry.put("day", device.getSimDay());
+        telemetry.put("lastUpdatedAt", device.getSimLastUpdatedAt().toString());
+        if (device.hasCapability(com.windowsense.entity.DeviceCapability.WINDOW_CONTROL)) {
+            telemetry.put("windowOpenPercent", device.getSimWindowOpenPercent());
+        }
+        if (device.hasCapability(com.windowsense.entity.DeviceCapability.BLINDS_CONTROL)) {
+            telemetry.put("blindClosedPercent", device.getSimBlindClosedPercent());
+        }
+        telemetry.put("roomId", device.getRoom().getId().toString());
+        telemetry.put("roomName", device.getRoom().getName());
+        telemetry.put("deviceId", device.getId().toString());
+        telemetry.put("isVirtual", true);
+        telemetry.put("simulationMode", device.getSimulationMode().name());
+        telemetry.put("mqttRpcConnected", true);
+        return telemetry;
     }
 
     private String requestId(String topic) {

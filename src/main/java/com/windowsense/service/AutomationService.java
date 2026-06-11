@@ -22,9 +22,7 @@ public class AutomationService {
                 || input.rainIntensity > thresholds.rainIntensityClose
                 || input.rainProbability >= thresholds.rainProbabilityClose;
         boolean windRisk = input.windKph >= thresholds.windKphClose;
-        boolean strongSun = input.lightLux >= thresholds.lightLuxShade
-                && input.indoorTempC >= thresholds.indoorTempShadeC;
-        boolean lowLight = input.lightLux < thresholds.lightLuxShade;
+        boolean day = input.day > 0;
 
         if ((rainRisk || windRisk) && input.windowOpenPercent > 0) {
             decisions.add(new Decision(
@@ -37,21 +35,21 @@ public class AutomationService {
             ));
         }
 
-        if (strongSun && input.blindsPositionPercent < thresholds.blindsShadePosition) {
+        if (day && input.blindsPositionPercent < thresholds.blindsShadePosition) {
             decisions.add(new Decision(
                     "blinds",
                     "setPosition",
                     thresholds.blindsShadePosition,
-                    "Visok intenzitet svjetlosti i temperatura zahtijevaju zasjenu."
+                    "Dan je aktivan, rolete se spustaju u zadani dnevni polozaj."
             ));
         }
 
-        if (!rainRisk && lowLight && input.blindsPositionPercent > thresholds.blindsReleasePosition) {
+        if (!day && input.blindsPositionPercent > thresholds.blindsReleasePosition) {
             decisions.add(new Decision(
                     "blinds",
                     "setPosition",
                     thresholds.blindsReleasePosition,
-                    "Svjetlost je ispod praga zasjene, rolete se vracaju u otvoreniji polozaj."
+                    "Noc je aktivna, rolete se vracaju u zadani nocni polozaj."
             ));
         }
 

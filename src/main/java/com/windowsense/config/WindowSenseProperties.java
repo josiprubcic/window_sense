@@ -13,6 +13,7 @@ public class WindowSenseProperties {
     private Encryption encryption = new Encryption();
     private VirtualSimulator virtualSimulator = new VirtualSimulator();
     private Commands commands = new Commands();
+    private Automation automation = new Automation();
 
     public ThingsBoard getThingsBoard() {
         return thingsBoard;
@@ -54,12 +55,21 @@ public class WindowSenseProperties {
         this.commands = commands == null ? new Commands() : commands;
     }
 
+    public Automation getAutomation() {
+        return automation;
+    }
+
+    public void setAutomation(Automation automation) {
+        this.automation = automation == null ? new Automation() : automation;
+    }
+
     public static class ThingsBoard {
         private String host = "";
         private String mqttHost = "";
         private boolean provisioningEnabled = false;
         private ProvisioningAuthMode provisioningAuthMode = ProvisioningAuthMode.PASSWORD;
         private ThingsBoardDeleteMode deleteMode = ThingsBoardDeleteMode.SOFT;
+        private RuleChains ruleChains = new RuleChains();
         private String username = "";
         private String password = "";
         private String jwtToken = "";
@@ -103,6 +113,14 @@ public class WindowSenseProperties {
 
         public void setDeleteMode(ThingsBoardDeleteMode deleteMode) {
             this.deleteMode = deleteMode == null ? ThingsBoardDeleteMode.SOFT : deleteMode;
+        }
+
+        public RuleChains getRuleChains() {
+            return ruleChains;
+        }
+
+        public void setRuleChains(RuleChains ruleChains) {
+            this.ruleChains = ruleChains == null ? new RuleChains() : ruleChains;
         }
 
         public String getUsername() {
@@ -159,6 +177,48 @@ public class WindowSenseProperties {
     public enum ThingsBoardDeleteMode {
         SOFT,
         HARD
+    }
+
+    public static class RuleChains {
+        private boolean autoSync = false;
+
+        public boolean isAutoSync() {
+            return autoSync;
+        }
+
+        public void setAutoSync(boolean autoSync) {
+            this.autoSync = autoSync;
+        }
+    }
+
+    public static class Automation {
+        private AutomationEngine engine = AutomationEngine.BACKEND;
+        private boolean backendFallbackEnabled = true;
+
+        public AutomationEngine getEngine() {
+            return engine;
+        }
+
+        public void setEngine(AutomationEngine engine) {
+            this.engine = engine == null ? AutomationEngine.THINGSBOARD_RULE_CHAIN : engine;
+        }
+
+        public boolean isBackendFallbackEnabled() {
+            return backendFallbackEnabled;
+        }
+
+        public void setBackendFallbackEnabled(boolean backendFallbackEnabled) {
+            this.backendFallbackEnabled = backendFallbackEnabled;
+        }
+
+        public boolean isThingsBoardRuleChainEngine() {
+            return engine == AutomationEngine.THINGSBOARD_RULE_CHAIN;
+        }
+    }
+
+    public enum AutomationEngine {
+        THINGSBOARD_RULE_CHAIN,
+        BACKEND
     }
 
     public static class Commands {
@@ -232,6 +292,7 @@ public class WindowSenseProperties {
     public static class VirtualSimulator {
         private boolean enabled = false;
         private boolean publishToThingsBoard = false;
+        private boolean publishPhysicalWeatherToThingsBoard = false;
         private boolean mqttRpcEnabled = false;
         private long mqttReconnectIntervalMs = 10000;
         private long intervalMs = 5000;
@@ -252,6 +313,14 @@ public class WindowSenseProperties {
 
         public void setPublishToThingsBoard(boolean publishToThingsBoard) {
             this.publishToThingsBoard = publishToThingsBoard;
+        }
+
+        public boolean isPublishPhysicalWeatherToThingsBoard() {
+            return publishPhysicalWeatherToThingsBoard;
+        }
+
+        public void setPublishPhysicalWeatherToThingsBoard(boolean publishPhysicalWeatherToThingsBoard) {
+            this.publishPhysicalWeatherToThingsBoard = publishPhysicalWeatherToThingsBoard;
         }
 
         public boolean isMqttRpcEnabled() {

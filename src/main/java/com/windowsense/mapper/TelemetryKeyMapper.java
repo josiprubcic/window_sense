@@ -18,8 +18,6 @@ public class TelemetryKeyMapper {
         copyFirstPresent(normalized, telemetry, "rainDetected", "rainDetected");
         copyFirstPresent(normalized, telemetry, "rainIntensity", "rainIntensity");
         copyFirstPresent(normalized, telemetry, "rainRiskPercent", "rainRiskPercent", "rainProbability");
-        copyFirstPresent(normalized, telemetry, "lux", "lux", "lightLux");
-        copyFirstPresent(normalized, telemetry, "indoorTempC", "indoorTempC");
         copyFirstPresent(normalized, telemetry, "windKmh", "windKmh", "windKph");
         copyFirstPresent(normalized, telemetry, "windowOpenPercent", "windowOpenPercent");
         copyFirstPresent(normalized, telemetry, "blindClosedPercent", "blindClosedPercent", "blindsPositionPercent");

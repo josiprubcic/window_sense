@@ -30,10 +30,9 @@ class AutomationServiceTest {
     }
 
     @Test
-    void lowersBlindsOnStrongLight() {
+    void lowersBlindsDuringDay() {
         AutomationInput input = AutomationInput.createDefault();
-        input.lightLux = 80000;
-        input.indoorTempC = 26;
+        input.day = 1;
         input.blindsPositionPercent = 10;
 
         List<Decision> decisions = automationService.evaluate(input);
@@ -47,9 +46,9 @@ class AutomationServiceTest {
     }
 
     @Test
-    void raisesBlindsWhenLightFallsBelowShadeThreshold() {
+    void raisesBlindsDuringNight() {
         AutomationInput input = AutomationInput.createDefault();
-        input.lightLux = 30000;
+        input.day = 0;
         input.blindsPositionPercent = 85;
 
         List<Decision> decisions = automationService.evaluate(input);

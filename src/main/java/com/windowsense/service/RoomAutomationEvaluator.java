@@ -110,11 +110,11 @@ public class RoomAutomationEvaluator {
         telemetry.put("rainDetected", device.isSimRainDetected());
         telemetry.put("rainIntensity", device.getSimRainIntensity());
         telemetry.put("rainRiskPercent", device.getSimRainRiskPercent());
-        telemetry.put("lux", device.getSimLux());
-        telemetry.put("indoorTempC", device.getSimIndoorTempC());
+        telemetry.put("rainProbability", device.getSimRainRiskPercent());
         telemetry.put("windKmh", device.getSimWindKmh());
         telemetry.put("windowOpenPercent", device.getSimWindowOpenPercent());
         telemetry.put("blindClosedPercent", device.getSimBlindClosedPercent());
+        telemetry.put("day", device.getSimDay());
         Instant lastUpdatedAt = device.getSimLastUpdatedAt();
         if (lastUpdatedAt != null) {
             telemetry.put("lastUpdatedAt", lastUpdatedAt.toString());
@@ -127,9 +127,6 @@ public class RoomAutomationEvaluator {
         thresholds.rainIntensityClose = room.getThresholdRainIntensityClose();
         thresholds.rainProbabilityClose = room.getThresholdRainProbabilityClose();
         thresholds.windKphClose = room.getThresholdWindKphClose();
-        thresholds.lightLuxShade = room.getThresholdLightLuxShade();
-        thresholds.lightLuxRelease = room.getThresholdLightLuxRelease();
-        thresholds.indoorTempShadeC = room.getThresholdIndoorTempShadeC();
         thresholds.blindsShadePosition = room.getThresholdBlindsShadePosition();
         thresholds.blindsReleasePosition = room.getThresholdBlindsReleasePosition();
         return thresholds;
@@ -144,8 +141,7 @@ public class RoomAutomationEvaluator {
         input.thresholds = thresholds;
         input.rainDetected = booleanValue(telemetry, false, "rainDetected");
         input.rainIntensity = numberValue(telemetry, 0, "rainIntensity");
-        input.lightLux = numberValue(telemetry, 0, "lux", "lightLux");
-        input.indoorTempC = numberValue(telemetry, 0, "indoorTempC");
+        input.day = (int) numberValue(telemetry, 1, "day");
         input.rainProbability = numberValue(telemetry, 0, "rainRiskPercent", "rainProbability");
         input.windKph = numberValue(telemetry, 0, "windKmh", "windKph");
         input.windowOpenPercent = numberValue(telemetry, 0, "windowOpenPercent");

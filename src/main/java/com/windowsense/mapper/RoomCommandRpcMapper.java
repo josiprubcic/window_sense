@@ -3,7 +3,6 @@ package com.windowsense.mapper;
 import com.windowsense.entity.RuntimeState;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
@@ -16,11 +15,11 @@ public class RoomCommandRpcMapper {
             default -> throw new IllegalArgumentException("NO_DEVICE_FOR_CAPABILITY");
         };
 
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("commandId", command.id);
-        if (!"stop".equals(command.action)) {
-            params.put("position", requiredPosition(command));
-        }
+        Object params = switch (method) {
+            case "setAngle" -> anglePosition(command);
+            case "setWindowPosition", "setBlindsPosition" -> requiredPosition(command);
+            default -> Map.of();
+        };
         return new MappedRoomCommandRpc(method, params);
     }
 
@@ -38,13 +37,20 @@ public class RoomCommandRpcMapper {
         return switch (action) {
             case "open" -> "openBlinds";
             case "close" -> "closeBlinds";
-            case "setPosition" -> "setBlindsPosition";
+            case "setPosition" -> "setAngle";
             case "stop" -> "stopBlinds";
             default -> throw new IllegalArgumentException("Nepoznata akcija komande.");
         };
     }
 
     private Double requiredPosition(RuntimeState.Command command) {
+        if (command.positionPercent == null) {
+            throw new IllegalArgumentException("Pozicija je obavezna za RPC komandu.");
+        }
+        return command.positionPercent;
+    }
+
+    private Double anglePosition(RuntimeState.Command command) {
         if (command.positionPercent == null) {
             throw new IllegalArgumentException("Pozicija je obavezna za RPC komandu.");
         }

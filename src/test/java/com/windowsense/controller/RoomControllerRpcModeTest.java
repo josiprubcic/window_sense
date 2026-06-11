@@ -106,8 +106,7 @@ class RoomControllerRpcModeTest {
         ArgumentCaptor<ThingsBoardRpcRequest> requestCaptor = ArgumentCaptor.forClass(ThingsBoardRpcRequest.class);
         verify(rpcService).sendTwoWayRpc(eq("physical-device-kuhinja"), requestCaptor.capture());
         assertThat(requestCaptor.getValue().method()).isEqualTo("closeWindow");
-        assertThat(requestCaptor.getValue().params()).containsEntry("position", 0.0);
-        assertThat(requestCaptor.getValue().params()).containsKey("commandId");
+        assertThat(requestCaptor.getValue().params()).isEqualTo(java.util.Map.of());
     }
 
     private String createRoom(String name) throws Exception {

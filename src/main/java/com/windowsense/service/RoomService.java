@@ -1,6 +1,7 @@
 package com.windowsense.service;
 
 import com.windowsense.dto.AutomationThresholds;
+import com.windowsense.config.WindowSenseProperties;
 import com.windowsense.security.CurrentUserService;
 import com.windowsense.exception.ConflictException;
 import com.windowsense.exception.ResourceNotFoundException;
@@ -37,6 +38,7 @@ import com.windowsense.dto.RoomTelemetryResponse;
 import com.windowsense.dto.UpdateRoomRequest;
 import com.windowsense.security.EncryptionService;
 import com.windowsense.service.CommandService;
+import com.windowsense.repository.WindowDeviceRepository;
 import com.windowsense.service.CommandDeliveryPort;
 import com.windowsense.mapper.TelemetryKeyMapper;
 import com.windowsense.integration.thingsboard.ExistingPhysicalDeviceLinkRequest;
@@ -46,6 +48,7 @@ import com.windowsense.integration.thingsboard.ProvisionedPhysicalDevice;
 import com.windowsense.integration.thingsboard.ProvisionedRoomDevice;
 import com.windowsense.integration.thingsboard.RoomAssetDeprovisioningRequest;
 import com.windowsense.integration.thingsboard.RoomAssetProvisioningRequest;
+import com.windowsense.integration.thingsboard.RoomAutomationAttributesRequest;
 import com.windowsense.integration.thingsboard.RoomDeviceDeprovisioningRequest;
 import com.windowsense.integration.thingsboard.ThingsBoardProvisioningService;
 import com.windowsense.integration.thingsboard.ThingsBoardTelemetryQueryService;
@@ -57,6 +60,10 @@ import com.windowsense.dto.CommandRequest;
 import com.windowsense.service.CommandResult;
 import com.windowsense.dto.Decision;
 import com.windowsense.entity.RuntimeState;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,6 +82,7 @@ import java.util.stream.Collectors;
 @Service
 public class RoomService {
 
+    private static final Logger log = LoggerFactory.getLogger(RoomService.class);
     private static final String DEFAULT_HOME_NAME = "Default Home";
     private static final String PENDING_THINGSBOARD_ID = "pending-thingsboard-provisioning";
     private static final String MOCK_THINGSBOARD_ASSET_PREFIX = "tb-asset-";
@@ -84,6 +92,7 @@ public class RoomService {
     private final CurrentUserService currentUserService;
     private final HomeRepository homeRepository;
     private final RoomRepository roomRepository;
+    private final WindowDeviceRepository windowDeviceRepository;
     private final PhysicalDeviceRegistryRepository physicalDeviceRegistryRepository;
     private final ThingsBoardProvisioningService thingsBoardProvisioningService;
     private final ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService;
@@ -96,12 +105,53 @@ public class RoomService {
     private final RoomMapper roomMapper;
     private final TelemetryPublisher telemetryPublisher;
     private final VirtualThingsBoardRpcCommandDeliveryPort virtualRpcCommandDeliveryPort;
+    private final WindowSenseProperties.Automation automationProperties;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    @Autowired
+    public RoomService(
+            CurrentUserService currentUserService,
+            HomeRepository homeRepository,
+            RoomRepository roomRepository,
+            WindowDeviceRepository windowDeviceRepository,
+            PhysicalDeviceRegistryRepository physicalDeviceRegistryRepository,
+            ThingsBoardProvisioningService thingsBoardProvisioningService,
+            ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService,
+            EncryptionService encryptionService,
+            CommandService commandService,
+            CommandDeliveryPort commandDeliveryPort,
+            TelemetryKeyMapper telemetryKeyMapper,
+            RoomAutomationEvaluator roomAutomationEvaluator,
+            RoomDeviceSelector roomDeviceSelector,
+            RoomMapper roomMapper,
+            TelemetryPublisher telemetryPublisher,
+            VirtualThingsBoardRpcCommandDeliveryPort virtualRpcCommandDeliveryPort,
+            WindowSenseProperties properties
+    ) {
+        this.currentUserService = currentUserService;
+        this.homeRepository = homeRepository;
+        this.roomRepository = roomRepository;
+        this.windowDeviceRepository = windowDeviceRepository;
+        this.physicalDeviceRegistryRepository = physicalDeviceRegistryRepository;
+        this.thingsBoardProvisioningService = thingsBoardProvisioningService;
+        this.thingsBoardTelemetryQueryService = thingsBoardTelemetryQueryService;
+        this.encryptionService = encryptionService;
+        this.commandService = commandService;
+        this.commandDeliveryPort = commandDeliveryPort;
+        this.telemetryKeyMapper = telemetryKeyMapper;
+        this.roomAutomationEvaluator = roomAutomationEvaluator;
+        this.roomDeviceSelector = roomDeviceSelector;
+        this.roomMapper = roomMapper;
+        this.telemetryPublisher = telemetryPublisher;
+        this.virtualRpcCommandDeliveryPort = virtualRpcCommandDeliveryPort;
+        this.automationProperties = properties.getAutomation();
+    }
 
     public RoomService(
             CurrentUserService currentUserService,
             HomeRepository homeRepository,
             RoomRepository roomRepository,
+            WindowDeviceRepository windowDeviceRepository,
             PhysicalDeviceRegistryRepository physicalDeviceRegistryRepository,
             ThingsBoardProvisioningService thingsBoardProvisioningService,
             ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService,
@@ -115,21 +165,25 @@ public class RoomService {
             TelemetryPublisher telemetryPublisher,
             VirtualThingsBoardRpcCommandDeliveryPort virtualRpcCommandDeliveryPort
     ) {
-        this.currentUserService = currentUserService;
-        this.homeRepository = homeRepository;
-        this.roomRepository = roomRepository;
-        this.physicalDeviceRegistryRepository = physicalDeviceRegistryRepository;
-        this.thingsBoardProvisioningService = thingsBoardProvisioningService;
-        this.thingsBoardTelemetryQueryService = thingsBoardTelemetryQueryService;
-        this.encryptionService = encryptionService;
-        this.commandService = commandService;
-        this.commandDeliveryPort = commandDeliveryPort;
-        this.telemetryKeyMapper = telemetryKeyMapper;
-        this.roomAutomationEvaluator = roomAutomationEvaluator;
-        this.roomDeviceSelector = roomDeviceSelector;
-        this.roomMapper = roomMapper;
-        this.telemetryPublisher = telemetryPublisher;
-        this.virtualRpcCommandDeliveryPort = virtualRpcCommandDeliveryPort;
+        this(
+                currentUserService,
+                homeRepository,
+                roomRepository,
+                windowDeviceRepository,
+                physicalDeviceRegistryRepository,
+                thingsBoardProvisioningService,
+                thingsBoardTelemetryQueryService,
+                encryptionService,
+                commandService,
+                commandDeliveryPort,
+                telemetryKeyMapper,
+                roomAutomationEvaluator,
+                roomDeviceSelector,
+                roomMapper,
+                telemetryPublisher,
+                virtualRpcCommandDeliveryPort,
+                new WindowSenseProperties()
+        );
     }
 
     @Transactional
@@ -204,9 +258,15 @@ public class RoomService {
                 tbDeviceId,
                 deviceName,
                 tbDeviceName == null || tbDeviceName.isBlank() ? null : tbDeviceName,
+                capabilityLabels(capabilities),
                 user.getId(),
                 user.getAuth0Sub()
         ));
+        String accessToken = thingsBoardProvisioningService.fetchDeviceAccessToken(tbDeviceId);
+        if (accessToken != null && !accessToken.isBlank()) {
+            device.storeEncryptedThingsBoardDeviceToken(encryptionService.encrypt(accessToken));
+        }
+        syncAutomationAttributes(room);
 
         return roomMapper.toResponse(room);
     }
@@ -224,6 +284,7 @@ public class RoomService {
                         room.getName(),
                         room.getTbAssetId(),
                         deviceName,
+                        capabilityLabels(capabilities),
                         user.getId(),
                         user.getAuth0Sub()
                 )
@@ -236,6 +297,7 @@ public class RoomService {
         room.updateThingsBoardAsset(provisioned.tbAssetId());
         room.addDevice(device);
         roomRepository.saveAndFlush(room);
+        syncAutomationAttributes(room);
         return roomMapper.toResponse(room);
     }
 
@@ -261,7 +323,15 @@ public class RoomService {
         PhysicalDeviceRegistry registryDevice = physicalDeviceRegistryRepository.findByThingsBoardAccessTokenHash(accessTokenHash)
                 .orElseThrow(() -> new ResourceNotFoundException("Uredjaj nije registriran za taj token."));
 
-        return attachRegisteredPhysicalDevice(room, user, registryDevice, deviceName, true);
+        return attachRegisteredPhysicalDevice(
+                room,
+                user,
+                registryDevice,
+                deviceName,
+                true,
+                registryDevice.getCapabilities(),
+                request.thingsBoardAccessToken()
+        );
     }
 
     private RoomResponse pairRegisteredPhysicalDevice(UUID roomId, PairPhysicalDeviceRequest request, boolean linkThingsBoardEntity) {
@@ -307,6 +377,26 @@ public class RoomService {
             boolean linkThingsBoardEntity,
             Set<DeviceCapability> capabilities
     ) {
+        return attachRegisteredPhysicalDevice(
+                room,
+                user,
+                registryDevice,
+                deviceName,
+                linkThingsBoardEntity,
+                capabilities,
+                null
+        );
+    }
+
+    private RoomResponse attachRegisteredPhysicalDevice(
+            Room room,
+            AppUser user,
+            PhysicalDeviceRegistry registryDevice,
+            String deviceName,
+            boolean linkThingsBoardEntity,
+            Set<DeviceCapability> capabilities,
+            String thingsBoardAccessToken
+    ) {
         validateClaimablePhysicalDevice(registryDevice);
         if (capabilities == null || capabilities.isEmpty()) {
             capabilities = registryDevice.getCapabilities();
@@ -318,6 +408,9 @@ public class RoomService {
                 registryDevice.getSerialNumber(),
                 capabilities
         );
+        if (thingsBoardAccessToken != null && !thingsBoardAccessToken.isBlank()) {
+            device.storeEncryptedThingsBoardDeviceToken(encryptionService.encrypt(thingsBoardAccessToken));
+        }
         room.addDevice(device);
         registryDevice.claim(user.getId(), room.getId());
         roomRepository.saveAndFlush(room);
@@ -330,10 +423,12 @@ public class RoomService {
                     registryDevice.getTbDeviceId(),
                     deviceName,
                     null,
+                    capabilityLabels(capabilities),
                     user.getId(),
                     user.getAuth0Sub()
             ));
         }
+        syncAutomationAttributes(room);
 
         return roomMapper.toResponse(room);
     }
@@ -422,6 +517,7 @@ public class RoomService {
 
         roomRepository.saveAndFlush(room);
         physicalDeviceRegistryRepository.save(registryDevice);
+        syncAutomationAttributes(room);
         return new ProvisionPhysicalEspResponse(
                 room.getId(),
                 room.getName(),
@@ -645,6 +741,14 @@ public class RoomService {
 
         RoomAutomationEvaluation firstEvaluation = null;
         for (WindowDevice device : devices) {
+            double windowOpenPercent = device.getSimWindowOpenPercent();
+            if (device.hasCapability(DeviceCapability.WINDOW_CONTROL) && payload.containsKey("windowOpenPercent")) {
+                windowOpenPercent = numberValue(payload, "windowOpenPercent", windowOpenPercent, 0, 100);
+            }
+            double blindClosedPercent = device.getSimBlindClosedPercent();
+            if (device.hasCapability(DeviceCapability.BLINDS_CONTROL) && payload.containsKey("blindClosedPercent")) {
+                blindClosedPercent = numberValue(payload, "blindClosedPercent", blindClosedPercent, 0, 100);
+            }
             device.updateSimulationMode(SimulationMode.MANUAL);
             device.updateSimulationTelemetry(
                     booleanValue(payload, "rainDetected", device.isSimRainDetected()),
@@ -653,16 +757,23 @@ public class RoomService {
                     numberValue(payload, "lux", device.getSimLux(), 0, 120000),
                     numberValue(payload, "indoorTempC", device.getSimIndoorTempC(), -30, 80),
                     numberValue(payload, "windKmh", device.getSimWindKmh(), 0, 250),
-                    numberValue(payload, "windowOpenPercent", device.getSimWindowOpenPercent(), 0, 100),
-                    numberValue(payload, "blindClosedPercent", device.getSimBlindClosedPercent(), 0, 100)
+                    windowOpenPercent,
+                    blindClosedPercent,
+                    (int) numberValue(payload, "day", device.getSimDay(), 0, 1)
             );
-            RoomAutomationEvaluation evaluation = roomAutomationEvaluator.evaluateAndApply(
-                    room,
-                    device,
-                    thresholds(room),
-                    roomAutomationEvaluator.virtualTelemetry(device)
-            );
-            publishVirtualTelemetry(room, device, evaluation.decisions());
+            RoomAutomationEvaluation evaluation;
+            if (automationProperties.isThingsBoardRuleChainEngine()) {
+                evaluation = new RoomAutomationEvaluation(roomAutomationEvaluator.virtualTelemetry(device), List.of());
+                publishVirtualTelemetry(room, device, List.of());
+            } else {
+                evaluation = roomAutomationEvaluator.evaluateAndApply(
+                        room,
+                        device,
+                        thresholds(room),
+                        roomAutomationEvaluator.virtualTelemetry(device)
+                );
+                publishVirtualTelemetry(room, device, evaluation.decisions());
+            }
             if (firstEvaluation == null) {
                 firstEvaluation = evaluation;
             }
@@ -706,17 +817,29 @@ public class RoomService {
                 numberValue(payload, "rainIntensityClose", room.getThresholdRainIntensityClose(), 0, 100),
                 numberValue(payload, "rainProbabilityClose", room.getThresholdRainProbabilityClose(), 0, 100),
                 numberValue(payload, "windKphClose", room.getThresholdWindKphClose(), 0, 250),
-                numberValue(payload, "lightLuxShade", room.getThresholdLightLuxShade(), 0, 120000),
-                numberValue(payload, "lightLuxRelease", room.getThresholdLightLuxRelease(), 0, 120000),
-                numberValue(payload, "indoorTempShadeC", room.getThresholdIndoorTempShadeC(), -30, 80),
+                room.getThresholdLightLuxShade(),
+                room.getThresholdLightLuxRelease(),
+                room.getThresholdIndoorTempShadeC(),
                 numberValue(payload, "blindsShadePosition", room.getThresholdBlindsShadePosition(), 0, 100),
                 numberValue(payload, "blindsReleasePosition", room.getThresholdBlindsReleasePosition(), 0, 100)
         );
+        syncAutomationAttributes(room);
+        if (automationProperties.isThingsBoardRuleChainEngine()) {
+            for (WindowDevice device : activeVirtualDevices(room)) {
+                if (device.getDeviceType() == DeviceType.VIRTUAL) {
+                    publishVirtualTelemetry(room, device, List.of());
+                }
+            }
+        }
         Optional<WindowDevice> activeDevice = roomDeviceSelector.activeControllableDevice(room);
         if (activeDevice.isEmpty()) {
             return new RoomAutomationThresholdsResponse(room.getId(), thresholds(room), Map.of(), List.of());
         }
         WindowDevice device = activeDevice.get();
+        if (automationProperties.isThingsBoardRuleChainEngine()) {
+            Map<String, Object> telemetry = currentTelemetryForAutomation(room, device);
+            return new RoomAutomationThresholdsResponse(room.getId(), thresholds(room), telemetry, List.of());
+        }
         RoomAutomationEvaluation evaluation = roomAutomationEvaluator.evaluateAndApply(
                 room,
                 device,
@@ -791,7 +914,49 @@ public class RoomService {
         }
 
         Map<String, Object> payload = virtualThingsBoardPayload(room, device, decisions);
+        syncRuleChainRuntimeSharedAttributes(device, payload);
         telemetryPublisher.publishTelemetry(device, payload);
+    }
+
+    private void syncRuleChainRuntimeSharedAttributes(WindowDevice device, Map<String, Object> payload) {
+        if (!automationProperties.isThingsBoardRuleChainEngine()
+                || !isRealThingsBoardId(device.getTbDeviceId(), MOCK_THINGSBOARD_DEVICE_PREFIX)) {
+            return;
+        }
+        Map<String, Object> attributes = ruleChainRuntimeSharedAttributes(payload);
+        if (attributes.isEmpty()) {
+            return;
+        }
+        syncRoomRuntimeSharedAttributes(device.getRoom(), attributes);
+    }
+
+    private Map<String, Object> ruleChainRuntimeSharedAttributes(Map<String, Object> payload) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        Object rainProbability = payload.get("rainProbability");
+        if (rainProbability == null) {
+            rainProbability = payload.get("rainRiskPercent");
+        }
+        if (rainProbability != null) {
+            attributes.put("rainProbability", rainProbability);
+        }
+        Object day = payload.get("day");
+        if (day != null) {
+            attributes.put("day", day);
+        }
+        return attributes;
+    }
+
+    private void syncRoomRuntimeSharedAttributes(Room room, Map<String, Object> attributes) {
+        for (WindowDevice roomDevice : room.getDevices()) {
+            if (roomDevice.getStatus() != DeviceStatus.ACTIVE
+                    || !isRealThingsBoardId(roomDevice.getTbDeviceId(), MOCK_THINGSBOARD_DEVICE_PREFIX)) {
+                continue;
+            }
+            thingsBoardProvisioningService.syncDeviceSharedAttributes(
+                    roomDevice.getTbDeviceId(),
+                    attributes
+            );
+        }
     }
 
     private Map<String, Object> virtualThingsBoardPayload(Room room, WindowDevice device, List<Decision> decisions) {
@@ -800,9 +965,9 @@ public class RoomService {
         copyIfPresent(fullTelemetry, payload, "rainDetected");
         copyIfPresent(fullTelemetry, payload, "rainIntensity");
         copyIfPresent(fullTelemetry, payload, "rainRiskPercent");
-        copyIfPresent(fullTelemetry, payload, "lux");
-        copyIfPresent(fullTelemetry, payload, "indoorTempC");
+        copyIfPresent(fullTelemetry, payload, "rainProbability");
         copyIfPresent(fullTelemetry, payload, "windKmh");
+        copyIfPresent(fullTelemetry, payload, "day");
         copyIfPresent(fullTelemetry, payload, "lastUpdatedAt");
         if (device.hasCapability(DeviceCapability.WINDOW_CONTROL)) {
             copyIfPresent(fullTelemetry, payload, "windowOpenPercent");
@@ -815,19 +980,6 @@ public class RoomService {
         payload.put("deviceId", device.getId().toString());
         payload.put("isVirtual", true);
         payload.put("simulationMode", device.getSimulationMode().name());
-        payload.put("automationDecisionApplied", !decisions.isEmpty());
-        payload.put("automationDecisionCount", decisions.size());
-        payload.put("automationTarget", "");
-        payload.put("automationAction", "");
-        payload.put("automationPositionPercent", -1);
-        payload.put("automationReason", "");
-        if (!decisions.isEmpty()) {
-            Decision lastDecision = decisions.getLast();
-            payload.put("automationTarget", lastDecision.target());
-            payload.put("automationAction", lastDecision.action());
-            payload.put("automationPositionPercent", lastDecision.positionPercent() == null ? -1 : lastDecision.positionPercent());
-            payload.put("automationReason", lastDecision.reason());
-        }
         return payload;
     }
 
@@ -880,9 +1032,6 @@ public class RoomService {
         thresholds.rainIntensityClose = room.getThresholdRainIntensityClose();
         thresholds.rainProbabilityClose = room.getThresholdRainProbabilityClose();
         thresholds.windKphClose = room.getThresholdWindKphClose();
-        thresholds.lightLuxShade = room.getThresholdLightLuxShade();
-        thresholds.lightLuxRelease = room.getThresholdLightLuxRelease();
-        thresholds.indoorTempShadeC = room.getThresholdIndoorTempShadeC();
         thresholds.blindsShadePosition = room.getThresholdBlindsShadePosition();
         thresholds.blindsReleasePosition = room.getThresholdBlindsReleasePosition();
         return thresholds;
@@ -950,6 +1099,46 @@ public class RoomService {
                 .ifPresent(physicalDeviceRegistryRepository::delete);
     }
 
+    @PostConstruct
+    void syncMissingPhysicalDeviceTokens() {
+        List<WindowDevice> devices = windowDeviceRepository.findAll();
+        for (WindowDevice device : devices) {
+            if (device.getDeviceType() != DeviceType.PHYSICAL || device.getTbDeviceTokenEncrypted() != null) {
+                continue;
+            }
+            if (!isRealThingsBoardId(device.getTbDeviceId(), MOCK_THINGSBOARD_DEVICE_PREFIX)) {
+                continue;
+            }
+            try {
+                String accessToken = thingsBoardProvisioningService.fetchDeviceAccessToken(device.getTbDeviceId());
+                if (accessToken != null && !accessToken.isBlank()) {
+                    device.storeEncryptedThingsBoardDeviceToken(encryptionService.encrypt(accessToken));
+                    windowDeviceRepository.save(device);
+                    log.info("Dohvacen i spremljen ThingsBoard access token za fizicki uredjaj {}", device.getId());
+                }
+            } catch (Exception error) {
+                log.warn("Neuspjelo dohvacanje tokena za fizicki uredjaj {}: {}", device.getId(), error.getMessage());
+            }
+        }
+    }
+
+    private void syncAutomationAttributes(Room room) {
+        if (!automationProperties.isThingsBoardRuleChainEngine()) {
+            return;
+        }
+        for (WindowDevice device : room.getDevices()) {
+            if (device.getStatus() != DeviceStatus.ACTIVE || !isRealThingsBoardId(device.getTbDeviceId(), MOCK_THINGSBOARD_DEVICE_PREFIX)) {
+                continue;
+            }
+            thingsBoardProvisioningService.syncRoomAutomationAttributes(new RoomAutomationAttributesRequest(
+                    room.getId(),
+                    room.getName(),
+                    device.getTbDeviceId(),
+                    room.getThresholdRainProbabilityClose()
+            ));
+        }
+    }
+
     private boolean isRealThingsBoardId(String value, String mockPrefix) {
         return value != null && !value.isBlank()
                 && !PENDING_THINGSBOARD_ID.equals(value)
@@ -965,6 +1154,12 @@ public class RoomService {
 
     private Set<DeviceCapability> requestedCapabilitiesOrDefault(List<String> capabilityLabels) {
         return DeviceCapabilities.fromLabels(capabilityLabels);
+    }
+
+    private List<String> capabilityLabels(Set<DeviceCapability> capabilities) {
+        return capabilities == null ? List.of() : capabilities.stream()
+                .map(DeviceCapability::name)
+                .toList();
     }
 
     private String randomUrlToken() {

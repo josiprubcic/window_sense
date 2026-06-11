@@ -99,6 +99,9 @@ public class WindowDevice {
     @Column(name = "sim_blind_closed_percent", nullable = false)
     private double simBlindClosedPercent = 20;
 
+    @Column(name = "sim_day", nullable = false)
+    private int simDay = 1;
+
     @Column(name = "sim_last_updated_at", nullable = false)
     private Instant simLastUpdatedAt = Instant.now();
 
@@ -253,6 +256,10 @@ public class WindowDevice {
         return simBlindClosedPercent;
     }
 
+    public int getSimDay() {
+        return simDay;
+    }
+
     public Instant getSimLastUpdatedAt() {
         return simLastUpdatedAt;
     }
@@ -272,6 +279,30 @@ public class WindowDevice {
             double windowOpenPercent,
             double blindClosedPercent
     ) {
+        updateSimulationTelemetry(
+                rainDetected,
+                rainIntensity,
+                rainRiskPercent,
+                lux,
+                indoorTempC,
+                windKmh,
+                windowOpenPercent,
+                blindClosedPercent,
+                simDay
+        );
+    }
+
+    public void updateSimulationTelemetry(
+            boolean rainDetected,
+            double rainIntensity,
+            double rainRiskPercent,
+            double lux,
+            double indoorTempC,
+            double windKmh,
+            double windowOpenPercent,
+            double blindClosedPercent,
+            int day
+    ) {
         this.simRainDetected = rainDetected;
         this.simRainIntensity = clamp(rainIntensity, 0, 100);
         this.simRainRiskPercent = clamp(rainRiskPercent, 0, 100);
@@ -280,6 +311,7 @@ public class WindowDevice {
         this.simWindKmh = clamp(windKmh, 0, 250);
         this.simWindowOpenPercent = clamp(windowOpenPercent, 0, 100);
         this.simBlindClosedPercent = clamp(blindClosedPercent, 0, 100);
+        this.simDay = day <= 0 ? 0 : 1;
         this.simLastUpdatedAt = Instant.now();
     }
 

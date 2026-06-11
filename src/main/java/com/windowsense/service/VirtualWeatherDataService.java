@@ -49,8 +49,8 @@ public class VirtualWeatherDataService {
 
     private VirtualWeatherSample parseLine(String line) {
         String[] values = line.split(",");
-        if (values.length != 8) {
-            throw new IllegalArgumentException("Red nema ocekivanih 8 stupaca.");
+        if (values.length != 8 && values.length != 9) {
+            throw new IllegalArgumentException("Red nema ocekivanih 8 ili 9 stupaca.");
         }
 
         return new VirtualWeatherSample(
@@ -61,7 +61,8 @@ public class VirtualWeatherDataService {
                 doubleValue(values[4], -20, 60),
                 intValue(values[5], 0, 160),
                 intValue(values[6], 0, 100),
-                intValue(values[7], 0, 100)
+                intValue(values[7], 0, 100),
+                values.length == 9 ? intValue(values[8], 0, 1) : 0
         );
     }
 
@@ -85,10 +86,10 @@ public class VirtualWeatherDataService {
 
     private List<VirtualWeatherSample> fallbackSamples() {
         return List.of(
-                new VirtualWeatherSample(false, 0, 12, 52000, 23.5, 8, 72, 20),
-                new VirtualWeatherSample(false, 0, 22, 36000, 24.1, 14, 66, 35),
-                new VirtualWeatherSample(true, 45, 78, 14500, 22.8, 26, 28, 82),
-                new VirtualWeatherSample(true, 82, 96, 6200, 21.9, 38, 5, 100)
+                new VirtualWeatherSample(false, 0, 12, 52000, 23.5, 8, 72, 20, 1),
+                new VirtualWeatherSample(false, 0, 22, 36000, 24.1, 14, 66, 35, 1),
+                new VirtualWeatherSample(true, 45, 78, 14500, 22.8, 26, 28, 82, 0),
+                new VirtualWeatherSample(true, 82, 96, 6200, 21.9, 38, 5, 100, 0)
         );
     }
 }

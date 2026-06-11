@@ -9,6 +9,7 @@ import com.windowsense.entity.DeviceType;
 import com.windowsense.service.PhysicalDevicePairingCodeHasher;
 import com.windowsense.entity.PhysicalDeviceRegistry;
 import com.windowsense.repository.PhysicalDeviceRegistryRepository;
+import com.windowsense.repository.WindowDeviceRepository;
 import com.windowsense.entity.PhysicalDeviceRegistryStatus;
 import com.windowsense.service.PhysicalDeviceSecretHasher;
 import com.windowsense.entity.WindowDevice;
@@ -47,6 +48,7 @@ import com.windowsense.service.VirtualThingsBoardRpcCommandDeliveryPort;
 import com.windowsense.dto.CommandRequest;
 import com.windowsense.service.CommandResult;
 import com.windowsense.entity.RuntimeState;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -84,10 +86,12 @@ class RoomServiceTest {
     private final CommandDeliveryPort commandDeliveryPort = org.mockito.Mockito.mock(CommandDeliveryPort.class);
     private final TelemetryPublisher telemetryPublisher = org.mockito.Mockito.mock(TelemetryPublisher.class);
     private final VirtualThingsBoardRpcCommandDeliveryPort virtualRpcCommandDeliveryPort = org.mockito.Mockito.mock(VirtualThingsBoardRpcCommandDeliveryPort.class);
+    private final WindowDeviceRepository windowDeviceRepository = org.mockito.Mockito.mock(WindowDeviceRepository.class);
     private final RoomService roomService = new RoomService(
             currentUserService,
             homeRepository,
             roomRepository,
+            windowDeviceRepository,
             physicalDeviceRegistryRepository,
             provisioningService,
             telemetryQueryService,
@@ -101,6 +105,11 @@ class RoomServiceTest {
             telemetryPublisher,
             virtualRpcCommandDeliveryPort
     );
+
+    @AfterEach
+    void resetAutomationEngine() {
+        automationProperties().setEngine(com.windowsense.config.WindowSenseProperties.AutomationEngine.BACKEND);
+    }
 
     @Test
     void createRoomCreatesOnlyRoomWithoutProvisioningDevice() {
@@ -461,8 +470,7 @@ class RoomServiceTest {
         assertThat(response.isVirtual()).isTrue();
         assertThat(response.telemetry())
                 .containsEntry("rainDetected", false)
-                .containsEntry("rainRiskPercent", 12.0)
-                .containsEntry("lux", 52000.0);
+                .containsEntry("rainRiskPercent", 12.0);
         assertThat(response.message()).isNull();
         verify(telemetryQueryService, never()).latestDeviceTelemetry(any());
     }
@@ -500,7 +508,7 @@ class RoomServiceTest {
         when(roomRepository.findByIdAndHomeAppUserId(roomId, userId)).thenReturn(Optional.of(room));
         when(telemetryQueryService.latestDeviceTelemetry("existing-physical-device-id"))
                 .thenReturn(new ThingsBoardTelemetryQueryService.LatestTelemetry(
-                        java.util.Map.of("rainDetected", false, "lux", 1200),
+                        java.util.Map.of("rainDetected", false),
                         updatedAt
                 ));
 
@@ -510,7 +518,6 @@ class RoomServiceTest {
         assertThat(response.deviceType()).isEqualTo(DeviceType.PHYSICAL.name());
         assertThat(response.isVirtual()).isFalse();
         assertThat(response.telemetry()).containsEntry("rainDetected", false);
-        assertThat(response.telemetry()).containsEntry("lux", 1200);
         assertThat(response.updatedAt()).isEqualTo(updatedAt);
         verify(telemetryQueryService).latestDeviceTelemetry("existing-physical-device-id");
         verify(telemetryQueryService, never()).latestDeviceTelemetry("real-virtual-device-id");
@@ -588,10 +595,7 @@ class RoomServiceTest {
                 .containsEntry("rainIntensity", 47.0)
                 .containsEntry("rainRiskPercent", 79.0)
                 .containsEntry("windowOpenPercent", 0.0)
-                .containsEntry("simulationMode", "MANUAL")
-                .containsEntry("automationDecisionApplied", true)
-                .containsEntry("automationTarget", "window")
-                .containsEntry("automationAction", "close");
+                .containsEntry("simulationMode", "MANUAL");
     }
 
     @Test
@@ -643,7 +647,62 @@ class RoomServiceTest {
                 .containsEntry("windowOpenPercent", 72.0)
                 .doesNotContainKey("blindClosedPercent");
         assertThat(payloads.get(blinds))
-                .containsEntry("blindClosedPercent", 20.0)
+                .containsEntry("blindClosedPercent", 85.0)
+                .doesNotContainKey("windowOpenPercent");
+    }
+
+    @Test
+    void updateSimulationWithWeatherOnlyPayloadPreservesSeparateVirtualDevicePositions() {
+        UUID userId = UUID.randomUUID();
+        UUID roomId = UUID.randomUUID();
+        AppUser user = user(userId);
+        automationProperties().setEngine(com.windowsense.config.WindowSenseProperties.AutomationEngine.THINGSBOARD_RULE_CHAIN);
+        Room room = emptyRoom(roomId, "Dnevni boravak", "real-asset-id");
+        WindowDevice window = WindowDevice.virtualDevice(
+                "Virtualni prozor",
+                "tb-window-id",
+                java.util.Set.of(DeviceCapability.WINDOW_CONTROL)
+        );
+        WindowDevice blinds = WindowDevice.virtualDevice(
+                "Virtualni roleta",
+                "tb-blinds-id",
+                java.util.Set.of(DeviceCapability.BLINDS_CONTROL)
+        );
+        ReflectionTestUtils.setField(window, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(blinds, "id", UUID.randomUUID());
+        window.updateSimulationTelemetry(false, 0, 10, 52000, 23.5, 8, 64, 20, 1);
+        blinds.updateSimulationTelemetry(false, 0, 10, 52000, 23.5, 8, 72, 85, 1);
+        room.addDevice(window);
+        room.addDevice(blinds);
+
+        when(currentUserService.getOrCreateCurrentUser()).thenReturn(user);
+        when(roomRepository.findByIdAndHomeAppUserId(roomId, userId)).thenReturn(Optional.of(room));
+
+        roomService.updateSimulation(roomId, Map.of(
+                "rainDetected", true,
+                "rainIntensity", 70,
+                "rainRiskPercent", 80,
+                "day", 0
+        ));
+
+        assertThat(window.getSimWindowOpenPercent()).isEqualTo(64.0);
+        assertThat(blinds.getSimBlindClosedPercent()).isEqualTo(85.0);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<WindowDevice> deviceCaptor = ArgumentCaptor.forClass(WindowDevice.class);
+        verify(telemetryPublisher, org.mockito.Mockito.times(2)).publishTelemetry(deviceCaptor.capture(), payloadCaptor.capture());
+
+        Map<WindowDevice, Map<String, Object>> payloads = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < deviceCaptor.getAllValues().size(); index++) {
+            payloads.put(deviceCaptor.getAllValues().get(index), payloadCaptor.getAllValues().get(index));
+        }
+
+        assertThat(payloads.get(window))
+                .containsEntry("windowOpenPercent", 64.0)
+                .doesNotContainKey("blindClosedPercent");
+        assertThat(payloads.get(blinds))
+                .containsEntry("blindClosedPercent", 85.0)
                 .doesNotContainKey("windowOpenPercent");
     }
 
@@ -771,5 +830,12 @@ class RoomServiceTest {
         Room room = new Room(new Home(user(UUID.randomUUID()), "Default Home"), roomName, tbAssetId);
         ReflectionTestUtils.setField(room, "id", roomId);
         return room;
+    }
+
+    private com.windowsense.config.WindowSenseProperties.Automation automationProperties() {
+        return (com.windowsense.config.WindowSenseProperties.Automation) ReflectionTestUtils.getField(
+                roomService,
+                "automationProperties"
+        );
     }
 }

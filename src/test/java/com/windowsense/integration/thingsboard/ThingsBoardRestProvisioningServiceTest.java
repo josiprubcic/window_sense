@@ -21,10 +21,12 @@ import org.springframework.web.client.RestClient;
 
 import java.util.UUID;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -99,6 +101,141 @@ class ThingsBoardRestProvisioningServiceTest {
         expectProvisioningCalls(context.server, "ApiKey provisioning-api-key");
 
         var provisioned = context.service.provisionVirtualRoomDevice(request());
+
+        assertThat(provisioned.tbDeviceAccessToken()).isEqualTo("device-access-token");
+        context.server.verify();
+    }
+
+    @Test
+    void syncRoomAutomationAttributesWritesSharedThresholdsUsedByRuleChain() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+
+        context.server.expect(once(), requestTo(HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SHARED_SCOPE"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Authorization", "ApiKey provisioning-api-key"))
+                .andExpect(content().json("""
+                        {
+                          "roomId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                          "roomName": "Kuhinja",
+                          "rainThreshold": 55.0,
+                          "desiredRainProbability": 55.0
+                        }
+                        """, true))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        context.service.syncRoomAutomationAttributes(new RoomAutomationAttributesRequest(
+                ROOM_ID,
+                "Kuhinja",
+                "device-id",
+                55.0
+        ));
+
+        context.server.verify();
+    }
+
+    @Test
+    void syncDeviceSharedAttributesWritesRuntimeValuesUsedByRuleChain() {
+        TestContext context = context(ProvisioningAuthMode.API_KEY);
+        context.properties.getThingsBoard().setApiKey("provisioning-api-key");
+
+        context.server.expect(once(), requestTo(HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SHARED_SCOPE"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Authorization", "ApiKey provisioning-api-key"))
+                .andExpect(content().json("""
+                        {
+                          "rainProbability": 31.0
+                        }
+                        """, true))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        context.service.syncDeviceSharedAttributes("device-id", Map.of("rainProbability", 31.0));
+
+        context.server.verify();
+    }
+
+
+    @Test
+    void autoSyncUsesSharedRuleChainAndExistingDeviceProfileByExactName() {
+        TestContext context = context(ProvisioningAuthMode.JWT);
+        context.properties.getThingsBoard().setJwtToken("jwt-provisioning-token");
+        context.properties.getThingsBoard().getRuleChains().setAutoSync(true);
+
+        expectPost(context.server, HOST + "/api/asset", "Bearer jwt-provisioning-token", """
+                {
+                  "id": {
+                    "entityType": "ASSET",
+                    "id": "asset-id"
+                  }
+                }
+                """);
+        expectGet(context.server, HOST + "/api/ruleChains?pageSize=100&page=0", "Bearer jwt-provisioning-token", """
+                {
+                  "data": [
+                    {
+                      "id": {
+                        "entityType": "RULE_CHAIN",
+                        "id": "existing-automation-rule-chain-id"
+                      },
+                      "name": "TestProzorChain"
+                    }
+                  ],
+                  "hasNext": false
+                }
+                """);
+        expectPost(context.server, HOST + "/api/ruleChain/metadata", "Bearer jwt-provisioning-token", "");
+        expectGet(context.server, HOST + "/api/deviceProfiles?pageSize=100&page=0", "Bearer jwt-provisioning-token", """
+                {
+                  "data": [
+                    {
+                      "id": {
+                        "entityType": "DEVICE_PROFILE",
+                        "id": "existing-window-profile-id"
+                      },
+                      "name": "WindowSense Window Profile"
+                    }
+                  ],
+                  "hasNext": false
+                }
+                """);
+        expectGet(context.server, HOST + "/api/deviceProfile/existing-window-profile-id", "Bearer jwt-provisioning-token", """
+                {
+                  "id": {
+                    "entityType": "DEVICE_PROFILE",
+                    "id": "existing-window-profile-id"
+                  },
+                  "name": "WindowSense Window Profile"
+                }
+                """);
+        expectPost(context.server, HOST + "/api/deviceProfile", "Bearer jwt-provisioning-token", "");
+        expectPost(context.server, HOST + "/api/device", "Bearer jwt-provisioning-token", """
+                {
+                  "id": {
+                    "entityType": "DEVICE",
+                    "id": "device-id"
+                  }
+                }
+                """);
+        expectGet(context.server, HOST + "/api/device/device-id/credentials", "Bearer jwt-provisioning-token", """
+                {
+                  "credentialsType": "ACCESS_TOKEN",
+                  "credentialsId": "device-access-token"
+                }
+                """);
+        expectPost(context.server, HOST + "/api/relation", "Bearer jwt-provisioning-token", "");
+        expectPost(context.server, HOST + "/api/plugins/telemetry/ASSET/asset-id/attributes/SERVER_SCOPE", "Bearer jwt-provisioning-token", "");
+        expectVirtualServerAttributesPost(context.server, "Bearer jwt-provisioning-token");
+        expectVirtualSharedAttributesPost(context.server, "Bearer jwt-provisioning-token");
+
+        var provisioned = context.service.provisionVirtualRoomDevice(new VirtualRoomProvisioningRequest(
+                ROOM_ID,
+                "Kuhinja",
+                null,
+                "WindowSense - Kuhinja",
+                List.of("WINDOW_CONTROL"),
+                USER_ID,
+                "auth0|window-user"
+        ));
 
         assertThat(provisioned.tbDeviceAccessToken()).isEqualTo("device-access-token");
         context.server.verify();
@@ -471,8 +608,51 @@ class ThingsBoardRestProvisioningServiceTest {
                 """);
         expectPost(server, HOST + "/api/relation", authorization, "");
         expectPost(server, HOST + "/api/plugins/telemetry/ASSET/asset-id/attributes/SERVER_SCOPE", authorization, "");
-        expectPost(server, HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SERVER_SCOPE", authorization, "");
-        expectPost(server, HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SHARED_SCOPE", authorization, "");
+        expectVirtualServerAttributesPost(server, authorization);
+        expectVirtualSharedAttributesPost(server, authorization);
+    }
+
+    private static void expectVirtualServerAttributesPost(MockRestServiceServer server, String authorization) {
+        server.expect(once(), requestTo(HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SERVER_SCOPE"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Authorization", authorization))
+                .andExpect(content().json("""
+                        {
+                          "isVirtual": true,
+                          "roomId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                          "roomName": "Kuhinja",
+                          "appUserId": "11111111-2222-3333-4444-555555555555",
+                          "auth0Sub": "auth0|window-user",
+                          "deviceType": "VIRTUAL",
+                          "active": true,
+                          "deletedFromApp": false
+                        }
+                        """, true))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+    }
+
+    private static void expectVirtualSharedAttributesPost(MockRestServiceServer server, String authorization) {
+        server.expect(once(), requestTo(HOST + "/api/plugins/telemetry/DEVICE/device-id/attributes/SHARED_SCOPE"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Authorization", authorization))
+                .andExpect(content().json("""
+                        {
+                          "isVirtual": true,
+                          "roomId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                          "roomName": "Kuhinja",
+                          "deviceType": "VIRTUAL",
+                          "deletedFromApp": false,
+                          "day": 1,
+                          "desiredAngle": 70,
+                          "desiredAngleDay": 90,
+                          "desiredAngleNight": 0,
+                          "desiredAngleRain": 15,
+                          "desiredRainProbability": 70,
+                          "manualMode": false,
+                          "rainProbability": 77
+                        }
+                        """, true))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
     }
 
     private static void expectPost(MockRestServiceServer server, String uri, String authorization, String responseBody) {

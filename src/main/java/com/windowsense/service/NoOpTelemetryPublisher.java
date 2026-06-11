@@ -15,7 +15,9 @@ public class NoOpTelemetryPublisher implements TelemetryPublisher {
     private static final Logger log = LoggerFactory.getLogger(NoOpTelemetryPublisher.class);
 
     @Override
-    public void publishTelemetry(WindowDevice device, Map<String, Object> payload) {
-        log.debug("Virtualna telemetrija bi bila poslana za uredjaj {}.", device.getId());
+    public boolean publishTelemetry(WindowDevice device, Map<String, Object> payload) {
+        log.warn("Virtualna telemetrija nije poslana za uredjaj {} jer je VIRTUAL_SIMULATOR_PUBLISH_TO_THINGSBOARD iskljucen ili nije ucitan.",
+                device.getId());
+        return false;
     }
 }

@@ -37,7 +37,11 @@ class RoomAutomationEvaluatorTest {
     @Test
     void virtualAutomationUpdatesVirtualActuatorStateImmediately() {
         Room room = room("Demo");
-        WindowDevice device = WindowDevice.virtualDevice("WindowSense - Demo", "virtual-device-id");
+        WindowDevice device = WindowDevice.virtualDevice(
+                "WindowSense - Demo",
+                "virtual-device-id",
+                Set.of(DeviceCapability.WINDOW_CONTROL)
+        );
         room.addDevice(device);
         device.updateSimulationTelemetry(false, 0, 90, 12000, 23, 0, 65, 40);
 
@@ -74,7 +78,8 @@ class RoomAutomationEvaluatorTest {
                         "indoorTempC", 23,
                         "windKmh", 0,
                         "windowOpenPercent", 72,
-                        "blindClosedPercent", 40
+                        "blindClosedPercent", 85,
+                        "day", 1
                 )
         );
 
@@ -106,7 +111,7 @@ class RoomAutomationEvaluatorTest {
                 .anySatisfy(event -> {
                     assertThat(event.source).isEqualTo("room-automation");
                     assertThat(event.title).isEqualTo("Automatska odluka: rolete/postavi");
-                    assertThat(event.details).contains("Visok intenzitet svjetlosti");
+                    assertThat(event.details).contains("Dan je aktivan");
                 });
     }
 
@@ -143,7 +148,7 @@ class RoomAutomationEvaluatorTest {
                 Set.of(DeviceCapability.BLINDS_CONTROL)
         );
         room.addDevice(device);
-        device.updateSimulationTelemetry(true, 90, 100, 12000, 23, 0, 65, 40);
+        device.updateSimulationTelemetry(true, 90, 100, 12000, 23, 0, 65, 85, 1);
 
         RoomAutomationEvaluation evaluation = evaluator.evaluateAndApply(
                 room,

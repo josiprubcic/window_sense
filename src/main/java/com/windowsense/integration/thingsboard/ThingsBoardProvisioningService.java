@@ -22,6 +22,16 @@ public interface ThingsBoardProvisioningService {
     default void linkExistingPhysicalDevice(ExistingPhysicalDeviceLinkRequest request) {
     }
 
+    default String fetchDeviceAccessToken(String tbDeviceId) {
+        return null;
+    }
+
+    default void syncRoomAutomationAttributes(RoomAutomationAttributesRequest request) {
+    }
+
+    default void syncDeviceSharedAttributes(String tbDeviceId, java.util.Map<String, Object> attributes) {
+    }
+
     default void deprovisionVirtualRoom(VirtualRoomDeprovisioningRequest request) {
     }
 

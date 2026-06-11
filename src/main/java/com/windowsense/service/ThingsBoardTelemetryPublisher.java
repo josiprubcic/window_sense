@@ -36,16 +36,16 @@ public class ThingsBoardTelemetryPublisher implements TelemetryPublisher {
     }
 
     @Override
-    public void publishTelemetry(WindowDevice device, Map<String, Object> payload) {
+    public boolean publishTelemetry(WindowDevice device, Map<String, Object> payload) {
         if (properties.getHost().isBlank()) {
             log.warn("ThingsBoard host nije konfiguriran; preskacem virtualnu telemetriju za uredjaj {}.", device.getId());
-            return;
+            return false;
         }
 
         String encryptedToken = device.getTbDeviceTokenEncrypted();
         if (encryptedToken == null || encryptedToken.isBlank()) {
             log.warn("Virtualni uredjaj {} nema spremljen ThingsBoard access token; preskacem telemetriju.", device.getId());
-            return;
+            return false;
         }
 
         String token;
@@ -53,7 +53,7 @@ public class ThingsBoardTelemetryPublisher implements TelemetryPublisher {
             token = encryptionService.decrypt(encryptedToken);
         } catch (EncryptionException error) {
             log.warn("ThingsBoard access token za uredjaj {} nije moguce dekriptirati; preskacem telemetriju.", device.getId());
-            return;
+            return false;
         }
 
         try {
@@ -63,6 +63,10 @@ public class ThingsBoardTelemetryPublisher implements TelemetryPublisher {
                     .body(payload)
                     .retrieve()
                     .toBodilessEntity();
+            log.info("ThingsBoard telemetry poslana za virtualni uredjaj {} na ThingsBoard device {}.",
+                    device.getId(),
+                    device.getTbDeviceId());
+            return true;
         } catch (HttpStatusCodeException error) {
             log.warn("ThingsBoard telemetry publish nije uspio za uredjaj {}. HTTP status: {}.",
                     device.getId(),
@@ -72,5 +76,6 @@ public class ThingsBoardTelemetryPublisher implements TelemetryPublisher {
                     device.getId(),
                     error.getClass().getSimpleName());
         }
+        return false;
     }
 }

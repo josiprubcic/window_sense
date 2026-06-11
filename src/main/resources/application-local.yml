@@ -9,3 +9,6 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+
+server:
+  forward-headers-strategy: framework
