@@ -1,0 +1,314 @@
+{
+  "ruleChain": {
+    "name": "TestProzorChain",
+    "type": "CORE",
+    "firstRuleNodeId": null,
+    "root": false,
+    "debugMode": true,
+    "configuration": null,
+    "additionalInfo": {
+      "description": ""
+    }
+  },
+  "metadata": {
+    "version": 35,
+    "firstNodeIndex": 0,
+    "nodes": [
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbMsgTypeSwitchNode",
+        "name": "Message Type Switch",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {},
+        "additionalInfo": {
+          "layoutX": 328,
+          "layoutY": 156
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.telemetry.TbMsgTimeseriesNode",
+        "name": "Save timeseries",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 1,
+        "configuration": {
+          "defaultTTL": 0,
+          "useServerTs": false,
+          "processingSettings": {
+            "type": "ON_EVERY_MESSAGE"
+          }
+        },
+        "additionalInfo": {
+          "layoutX": 84,
+          "layoutY": 290
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.metadata.TbGetAttributesNode",
+        "name": "Get shared attributes",
+        "debugSettings": {
+          "failuresEnabled": false,
+          "allEnabled": false,
+          "allEnabledUntil": 1781027109278
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 1,
+        "configuration": {
+          "tellFailureIfAbsent": false,
+          "fetchTo": "METADATA",
+          "clientAttributeNames": [],
+          "sharedAttributeNames": [
+            "manualMode",
+            "desiredAngleDay",
+            "desiredAngleNight",
+            "desiredAngle",
+            "desiredAngleRain",
+            "desiredRainProbability",
+            "rainProbability"
+          ],
+          "serverAttributeNames": [],
+          "latestTsKeyNames": [
+            "day",
+            "rainProbability",
+            "rainRiskPercent",
+            "windowOpenPercent",
+            "blindClosedPercent"
+          ],
+          "getLatestValueWithTs": false
+        },
+        "additionalInfo": {
+          "description": null,
+          "layoutX": 239,
+          "layoutY": 462
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbJsFilterNode",
+        "name": "Manual mode check",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "tbelScript": "return metadata.shared_manualMode == false;"
+        },
+        "additionalInfo": {
+          "layoutX": 492,
+          "layoutY": 326
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbJsFilterNode",
+        "name": "Check day === 0",
+        "debugSettings": {
+          "failuresEnabled": false,
+          "allEnabled": false,
+          "allEnabledUntil": 1781027246359
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "tbelScript": "return msg.day == 0;"
+        },
+        "additionalInfo": {
+          "layoutX": 742,
+          "layoutY": 301
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbTransformMsgNode",
+        "name": "Build RPC day (desiredAngleDay)",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": null,
+          "tbelScript": "var desired = metadata.shared_desiredAngleDay != null ? metadata.shared_desiredAngleDay : 90;\nmetadata.currentWindowOpenPercent = msg.windowOpenPercent;\nvar newMsg = {\n    method: \"setAngle\",\n    params: desired\n};\nreturn { msg: newMsg, metadata: metadata, msgType: msgType };"
+        },
+        "additionalInfo": {
+          "description": null,
+          "layoutX": 1210,
+          "layoutY": 66
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbTransformMsgNode",
+        "name": "Build RPC night (desiredAngleNight)",
+        "debugSettings": {
+          "failuresEnabled": false,
+          "allEnabled": false,
+          "allEnabledUntil": 1781027395405
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": null,
+          "tbelScript": "var desired = metadata.shared_desiredAngleNight != null ? metadata.shared_desiredAngleNight : 0;\nmetadata.currentWindowOpenPercent = msg.windowOpenPercent;\nvar newMsg = {\n    method: \"setAngle\",\n    params: desired\n};\nreturn { msg: newMsg, metadata: metadata, msgType: msgType };"
+        },
+        "additionalInfo": {
+          "description": null,
+          "layoutX": 1132,
+          "layoutY": 526
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.rpc.TbSendRPCRequestNode",
+        "name": "RPC call request",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "timeoutInSeconds": 30
+        },
+        "additionalInfo": {
+          "layoutX": 1372,
+          "layoutY": 284
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbTransformMsgNode",
+        "name": "Manual Send",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return {msg: msg, metadata: metadata, msgType: msgType};",
+          "tbelScript": "var desired = metadata.shared_desiredAngle != null ? metadata.shared_desiredAngle : 0;\nmetadata.currentWindowOpenPercent = msg.windowOpenPercent;\nvar newMsg = {\n    method: \"setAngle\",\n    params: desired\n};\nreturn { msg: newMsg, metadata: metadata, msgType: msgType };"
+        },
+        "additionalInfo": {
+          "description": "",
+          "layoutX": 662,
+          "layoutY": 498
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbJsFilterNode",
+        "name": "Check Rain",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return msg.temperature > 20;",
+          "tbelScript": "return metadata.shared_rainProbability > metadata.shared_desiredRainProbability;"
+        },
+        "additionalInfo": {
+          "description": "",
+          "layoutX": 663,
+          "layoutY": 96
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbTransformMsgNode",
+        "name": "Build RPC rain",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return {msg: msg, metadata: metadata, msgType: msgType};",
+          "tbelScript": "var desired = metadata.shared_desiredAngleRain != null ? metadata.shared_desiredAngleRain : 90;\nmetadata.currentWindowOpenPercent = msg.windowOpenPercent;\nvar newMsg = {\n    method: \"setAngle\",\n    params: desired\n};\nreturn { msg: newMsg, metadata: metadata, msgType: msgType };"
+        },
+        "additionalInfo": {
+          "description": "",
+          "layoutX": 914,
+          "layoutY": 87
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromIndex": 0,
+        "toIndex": 1,
+        "type": "Post telemetry"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 2,
+        "type": "Attributes Updated"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 7,
+        "type": "RPC Request to Device"
+      },
+      {
+        "fromIndex": 1,
+        "toIndex": 2,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 2,
+        "toIndex": 3,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 3,
+        "toIndex": 8,
+        "type": "False"
+      },
+      {
+        "fromIndex": 3,
+        "toIndex": 9,
+        "type": "True"
+      },
+      {
+        "fromIndex": 4,
+        "toIndex": 5,
+        "type": "False"
+      },
+      {
+        "fromIndex": 4,
+        "toIndex": 6,
+        "type": "True"
+      },
+      {
+        "fromIndex": 5,
+        "toIndex": 7,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 6,
+        "toIndex": 7,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 8,
+        "toIndex": 7,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 9,
+        "toIndex": 4,
+        "type": "False"
+      },
+      {
+        "fromIndex": 9,
+        "toIndex": 10,
+        "type": "True"
+      },
+      {
+        "fromIndex": 10,
+        "toIndex": 7,
+        "type": "Success"
+      }
+    ],
+    "ruleChainConnections": null
+  }
+}
