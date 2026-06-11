@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="hr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WindowSense</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>WindowSense</h1>
+          <p id="siteArea">Pametna zgrada</p>
+        </div>
+        <nav id="appNav" class="app-nav" aria-label="Glavna navigacija" hidden>
+          <a href="#/dashboard" data-route-link="dashboard">Dashboard</a>
+          <a href="#/rooms" data-route-link="rooms">Sobe</a>
+        </nav>
+        <div class="topbar__meta">
+          <span id="automationMode" class="status-pill">AUTO</span>
+          <span id="iotStatus" class="status-pill status-pill--neutral">ThingsBoard</span>
+          <span id="lastUpdated" class="timestamp">--</span>
+          <a id="loginLink" class="auth-link" href="/oauth2/authorization/windowsense" hidden>Prijava</a>
+          <span id="userName" class="status-pill status-pill--neutral" hidden></span>
+          <a id="logoutLink" class="auth-link" href="/logout" hidden>Odjava</a>
+        </div>
+      </header>
+
+      <main>
+        <section id="loginView" class="login-view" hidden>
+          <div class="login-panel">
+            <h2>WindowSense</h2>
+            <p>Prijavite se za pristup dashboardu i sobama.</p>
+            <a id="loginCta" class="login-button" href="/oauth2/authorization/windowsense">Prijava</a>
+          </div>
+        </section>
+
+        <section id="dashboardView" class="dashboard view" hidden>
+          <section class="dashboard-roombar panel-section" aria-label="Odabir sobe za dashboard">
+            <label>
+              <span>Dashboard</span>
+              <select id="dashboardRoomSelect"></select>
+            </label>
+            <p id="dashboardSource" class="form-message">--</p>
+          </section>
+
+          <section class="overview-grid" aria-label="Stanje sustava">
+          <article class="metric metric--rain">
+            <span class="metric__label">Kiša</span>
+            <strong id="rainValue">--</strong>
+            <small id="rainDetail">--</small>
+          </article>
+          </section>
+
+          <section class="workspace">
+          <article class="visual-panel">
+            <div class="visual-panel__header">
+              <div>
+                <h2>Zona: <span id="siteName">WindowSense Lab</span></h2>
+                <p id="weatherLine">Sažetak trenutnog stanja</p>
+              </div>
+            </div>
+
+            <dl class="status-grid" aria-label="Sažetak stanja prozora, zastora i vremena">
+              <div class="status-item">
+                <dt>Kiša</dt>
+                <dd id="summaryRain">--</dd>
+              </div>
+              <div class="status-item">
+                <dt>Rizik kiše</dt>
+                <dd id="summaryRainRisk">--</dd>
+              </div>
+            </dl>
+          </article>
+
+          <aside class="control-panel">
+            <section id="controlsPanel" class="panel-section">
+              <div class="panel-title">
+                <h2>Upravljanje</h2>
+                <div class="segmented" role="group" aria-label="Način rada">
+                  <button id="autoModeButton" data-mode="auto" class="is-active">Auto</button>
+                  <button id="manualModeButton" data-mode="manual">Ručno</button>
+                </div>
+              </div>
+
+              <label class="command-device-row">
+                <span>Uređaj za dashboard i komande</span>
+                <select id="dashboardDeviceSelect"></select>
+              </label>
+
+              <div class="button-row">
+                <button data-target="window" data-action="open">Otvori prozor</button>
+                <button data-target="window" data-action="close">Zatvori prozor</button>
+                <button data-target="window" data-action="stop">Stop</button>
+              </div>
+              <label class="range-row">
+                <span>Položaj prozora</span>
+                <input id="windowSlider" type="range" min="0" max="100" step="5">
+                <output id="windowSliderValue">--</output>
+              </label>
+
+              <div class="button-row">
+                <button data-target="blinds" data-action="open">Podigni</button>
+                <button data-target="blinds" data-action="setPosition" data-position="85">Zasjeni</button>
+                <button data-target="blinds" data-action="close">Spusti</button>
+              </div>
+              <label class="range-row">
+                <span>Položaj roleta</span>
+                <input id="blindsSlider" type="range" min="0" max="100" step="5">
+                <output id="blindsSliderValue">--</output>
+              </label>
+            </section>
+
+            <section id="simulationPanel" class="panel-section">
+              <div class="panel-title">
+                <h2>Simulacija</h2>
+                <div class="segmented" role="group" aria-label="Način simulacije">
+                  <button id="simulationAutoButton" type="button">Auto</button>
+                  <button id="simulationManualButton" type="button">Ručno</button>
+                </div>
+                <button id="applyTelemetryButton" class="button-secondary">Primijeni</button>
+              </div>
+              <label class="toggle-row">
+                <span>Senzor kiše</span>
+                <input id="rainToggle" type="checkbox">
+              </label>
+              <label class="range-row">
+                <span>Rizik kiše</span>
+                <input id="rainProbabilityInput" type="range" min="0" max="100" step="1">
+                <output id="rainProbabilityValue">--</output>
+              </label>
+              <label class="toggle-row">
+                <span>Dan</span>
+                <input id="dayNightToggle" type="checkbox">
+              </label>
+            </section>
+          </aside>
+          </section>
+
+          <section class="dashboard-device-section panel-section">
+            <h2>Stanja uređaja</h2>
+            <div id="dashboardDeviceStates" class="dashboard-device-states"></div>
+          </section>
+
+          <section class="lower-grid">
+          <article id="automationPanel" class="panel-section automation-panel">
+            <div class="panel-title">
+              <h2>Pravila</h2>
+              <button id="saveThresholdsButton" class="button-secondary">Spremi</button>
+            </div>
+            <div class="threshold-grid">
+              <label>
+                <span>Rizik kiše za zatvaranje</span>
+                <input id="thresholdRain" type="number" min="0" max="100" step="1">
+              </label>
+            </div>
+          </article>
+
+          <article class="panel-section iot-panel">
+            <h2>IoT veza</h2>
+            <dl>
+              <div>
+                <dt>Platforma</dt>
+                <dd id="iotPlatform">ThingsBoard</dd>
+              </div>
+              <div>
+                <dt>Uređaj</dt>
+                <dd id="deviceId">--</dd>
+              </div>
+              <div>
+                <dt>Zadnja sinkronizacija</dt>
+                <dd id="lastSync">--</dd>
+              </div>
+              <div>
+                <dt>Greška</dt>
+                <dd id="iotError">--</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="panel-section events-panel">
+            <h2>Događaji</h2>
+            <ol id="eventList" class="event-list"></ol>
+          </article>
+          </section>
+        </section>
+
+        <section id="roomsView" class="rooms-page view" hidden>
+          <article class="panel-section rooms-panel">
+            <div class="panel-title">
+              <h2>Sobe</h2>
+              <button id="addRoomButton" class="button-secondary">Dodaj sobu</button>
+            </div>
+            <label class="room-form">
+              <span>Naziv sobe</span>
+              <input id="roomNameInput" type="text" maxlength="120" placeholder="Spavaća soba">
+            </label>
+            <p id="roomsMessage" class="form-message" role="status" aria-live="polite"></p>
+            <div id="roomsList" class="rooms-list"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
