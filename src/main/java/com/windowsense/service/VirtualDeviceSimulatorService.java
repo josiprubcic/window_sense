@@ -3,12 +3,14 @@ package com.windowsense.service;
 import com.windowsense.entity.DeviceStatus;
 import com.windowsense.entity.DeviceType;
 import com.windowsense.entity.DeviceCapability;
+import com.windowsense.entity.RuntimeState;
 import com.windowsense.entity.SimulationMode;
 import com.windowsense.entity.WindowDevice;
 import com.windowsense.config.WindowSenseProperties;
 import com.windowsense.exception.ThingsBoardProvisioningException;
 import com.windowsense.integration.thingsboard.ThingsBoardProvisioningService;
 import com.windowsense.integration.thingsboard.ThingsBoardTelemetryQueryService;
+import com.windowsense.repository.RuntimeStateRepository;
 import com.windowsense.repository.WindowDeviceRepository;
 import com.windowsense.dto.Decision;
 import com.windowsense.entity.Room;
@@ -40,6 +42,8 @@ public class VirtualDeviceSimulatorService {
     private final RoomAutomationEvaluator roomAutomationEvaluator;
     private final ThingsBoardProvisioningService thingsBoardProvisioningService;
     private final ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService;
+    private final EventLogService eventLogService;
+    private final RuntimeStateRepository runtimeStateRepository;
     private final WindowSenseProperties.VirtualSimulator properties;
     private final WindowSenseProperties.Automation automationProperties;
     private final AtomicInteger sampleCursor = new AtomicInteger(0);
@@ -52,6 +56,8 @@ public class VirtualDeviceSimulatorService {
             RoomAutomationEvaluator roomAutomationEvaluator,
             ThingsBoardProvisioningService thingsBoardProvisioningService,
             ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService,
+            EventLogService eventLogService,
+            RuntimeStateRepository runtimeStateRepository,
             WindowSenseProperties properties
     ) {
         this.windowDeviceRepository = windowDeviceRepository;
@@ -60,6 +66,8 @@ public class VirtualDeviceSimulatorService {
         this.roomAutomationEvaluator = roomAutomationEvaluator;
         this.thingsBoardProvisioningService = thingsBoardProvisioningService;
         this.thingsBoardTelemetryQueryService = thingsBoardTelemetryQueryService;
+        this.eventLogService = eventLogService;
+        this.runtimeStateRepository = runtimeStateRepository;
         this.properties = properties.getVirtualSimulator();
         this.automationProperties = properties.getAutomation();
     }
@@ -83,6 +91,7 @@ public class VirtualDeviceSimulatorService {
                 continue;
             }
             applySample(device, sampleForHome(samples, baseIndex, samplesByHome, device));
+            recordVirtualTelemetryEvent(device);
             List<Decision> decisions = List.of();
             if (!isThingsBoardAutomationActive()) {
                 RoomAutomationEvaluation evaluation = roomAutomationEvaluator.evaluateAndApply(
@@ -255,6 +264,27 @@ public class VirtualDeviceSimulatorService {
                 device.getSimBlindClosedPercent(),
                 sample.day()
         );
+    }
+
+    private void recordVirtualTelemetryEvent(WindowDevice device) {
+        runtimeStateRepository.withState(state -> {
+            eventLogService.addRoomEvent(
+                    state,
+                    "info",
+                    "virtual-simulator",
+                    "Virtualna telemetrija osvjezena",
+                    "%s: kisa %d%%, %s.".formatted(
+                            device.getName(),
+                            Math.round(device.getSimRainRiskPercent()),
+                            device.getSimDay() == 1 ? "dan" : "noc"
+                    ),
+                    device.getRoom(),
+                    device,
+                    "Automatski simulator poslao je novi uzorak telemetrije"
+            );
+            state.updatedAt = RuntimeState.now();
+            return null;
+        });
     }
 
     private Map<String, Object> payload(WindowDevice device, List<Decision> decisions) {

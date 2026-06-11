@@ -34,8 +34,18 @@ http://localhost:3000
 
 ## Testovi
 
+Default test suite je namjerno sveden na 20 `core` testova koji pokrivaju
+glavne tokove aplikacije, ThingsBoard RPC, room service i virtualnu telemetriju:
+
 ```bash
 mvn test
+```
+
+Siri regresijski testovi ostaju u repozitoriju i mogu se pokrenuti eksplicitnim
+micanjem tag filtera:
+
+```bash
+mvn test -Dtest.groups=
 ```
 
 ## Konfiguracija
@@ -137,15 +147,16 @@ Primjer RPC payload-a:
 
 ```json
 {
-  "method": "setBlindsPosition",
-  "params": {
-    "commandId": "cmd-...",
-    "position": 85
-  },
+  "method": "setAngle",
+  "params": 76.5,
   "timeout": 15000,
   "persistent": false
 }
 ```
+
+Za prozor `params` je kut otvorenosti u rasponu `0..90` (`0` zatvoreno,
+`90` otvoreno). Za roletu `params` je kut spustenosti u rasponu `0..90`
+(`0` podignuta roleta, `90` potpuno spustena roleta).
 
 ESP firmware za RPC mode mora biti spojen na ThingsBoard MQTT koristeci svoj
 access token, slusati:
@@ -224,13 +235,15 @@ Virtualni uredjaji se mogu ponasati kao ThingsBoard MQTT device client ako je
 `VIRTUAL_SIMULATOR_MQTT_RPC_ENABLED=true`. Backend se tada spaja na MQTT broker
 sa spremljenim access tokenom svakog virtualnog uredjaja, slusa
 `v1/devices/me/rpc/request/+`, lokalno izvrsi RPC i vrati odgovor na
-`v1/devices/me/rpc/response/{requestId}`. Podrzane metode su `openWindow`,
-`closeWindow`, `setWindowPosition`, `stopWindow`, `openBlinds`, `closeBlinds`,
-`setBlindsPosition` i `stopBlinds`; `set*Position` prima `{"position": 0-100}`.
+`v1/devices/me/rpc/response/{requestId}`. Primarna metoda za prozor i roletu je
+`setAngle` s numerickim `params` u rasponu `0..90`; `stopWindow` i `stopBlinds`
+ostaju posebne stop komande.
 Ako je uz to ukljucen `WINDOWSENSE_COMMANDS_RPC_ENABLED=true`, klik na komandu
 u aplikaciji za virtualni uredjaj ide kroz isti ThingsBoard two-way RPC tok:
 app -> backend REST RPC -> ThingsBoard -> MQTT -> backend virtual-device listener.
 Ako RPC nije konfiguriran, virtualni uredjaj zadrzava lokalni fallback.
+Automatski virtualni simulator pri svakom AUTO ticku salje telemetriju i zapisuje
+event `Virtualna telemetrija osvjezena` za sobu i uredjaj.
 
 Ako ESP vec ima hardkodirani ThingsBoard access token, admin/proizvodni flow moze
 unaprijed registrirati uredjaj bez izlaganja tokena korisnickom frontendu:

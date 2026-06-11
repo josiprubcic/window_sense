@@ -8,6 +8,7 @@ import com.windowsense.entity.SimulationMode;
 import com.windowsense.entity.WindowDevice;
 import com.windowsense.integration.thingsboard.ThingsBoardTelemetryQueryService;
 import com.windowsense.integration.thingsboard.ThingsBoardProvisioningService;
+import com.windowsense.repository.RuntimeStateRepository;
 import com.windowsense.repository.WindowDeviceRepository;
 import com.windowsense.entity.Home;
 import com.windowsense.entity.Room;
@@ -18,6 +19,7 @@ import com.windowsense.service.TelemetryPublisher;
 import com.windowsense.service.VirtualDeviceSimulatorService;
 import com.windowsense.service.VirtualWeatherDataService;
 import com.windowsense.service.VirtualWeatherSample;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -40,6 +42,7 @@ class VirtualDeviceSimulatorServiceTest {
     private final CommandService commandService = mock(CommandService.class);
     private final ThingsBoardProvisioningService provisioningService = mock(ThingsBoardProvisioningService.class);
     private final ThingsBoardTelemetryQueryService thingsBoardTelemetryQueryService = mock(ThingsBoardTelemetryQueryService.class);
+    private final RuntimeStateRepository runtimeStateRepository = new RuntimeStateRepository();
     private final VirtualDeviceSimulatorService simulatorService = new VirtualDeviceSimulatorService(
             windowDeviceRepository,
             virtualWeatherDataService,
@@ -47,10 +50,13 @@ class VirtualDeviceSimulatorServiceTest {
             new RoomAutomationEvaluator(new AutomationService(), commandService),
             provisioningService,
             thingsBoardTelemetryQueryService,
+            new EventLogService(),
+            runtimeStateRepository,
             new WindowSenseProperties()
     );
 
     @Test
+    @Tag("core")
     void sendsTelemetryOnlyForActiveVirtualDevices() {
         WindowDevice activeVirtual = device("Kuhinja", DeviceType.VIRTUAL, true, DeviceStatus.ACTIVE);
         WindowDevice inactiveVirtual = device("Spavaca soba", DeviceType.VIRTUAL, true, DeviceStatus.INACTIVE);
@@ -109,6 +115,22 @@ class VirtualDeviceSimulatorServiceTest {
     }
 
     @Test
+    @Tag("core")
+    void recordsRoomEventForVirtualTelemetryTick() {
+        WindowDevice activeVirtual = device("Kuhinja", DeviceType.VIRTUAL, true, DeviceStatus.ACTIVE);
+        when(windowDeviceRepository.findActiveVirtualDevicesWithRoom()).thenReturn(List.of(activeVirtual));
+        when(virtualWeatherDataService.samples()).thenReturn(List.of(sample(false, 0, 10, 12300, 22.7, 31, 26, 86)));
+
+        simulatorService.publishVirtualTelemetry();
+
+        var events = runtimeStateRepository.getState().events;
+        assertThat(events.getFirst().source).isEqualTo("virtual-simulator");
+        assertThat(events.getFirst().roomId).isEqualTo(activeVirtual.getRoom().getId().toString());
+        assertThat(events.getFirst().deviceId).isEqualTo(activeVirtual.getId().toString());
+        assertThat(events.getFirst().title).isEqualTo("Virtualna telemetrija osvjezena");
+    }
+
+    @Test
     void usesSameWeatherSampleForDevicesInSameHome() {
         AppUser user = new AppUser("auth0|window-user", "user@example.com", "Window User");
         Home home = new Home(user, "Default Home");
@@ -151,6 +173,7 @@ class VirtualDeviceSimulatorServiceTest {
     }
 
     @Test
+    @Tag("core")
     void publishesWeatherOnlyForPhysicalDevicesWhenEnabled() {
         WindowSenseProperties properties = new WindowSenseProperties();
         properties.getVirtualSimulator().setPublishToThingsBoard(true);
@@ -162,6 +185,8 @@ class VirtualDeviceSimulatorServiceTest {
                 new RoomAutomationEvaluator(new AutomationService(), commandService),
                 provisioningService,
                 thingsBoardTelemetryQueryService,
+                new EventLogService(),
+                new RuntimeStateRepository(),
                 properties
         );
         WindowDevice physical = device("Dnevna soba", DeviceType.PHYSICAL, false, DeviceStatus.ACTIVE);

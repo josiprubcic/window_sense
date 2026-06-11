@@ -14,7 +14,6 @@ import com.windowsense.service.EventLogService;
 import com.windowsense.entity.AppUser;
 import com.windowsense.service.VirtualDeviceRpcHandler;
 import com.windowsense.service.VirtualDeviceRpcResult;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -28,7 +27,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@Tag("core")
 class VirtualDeviceRpcHandlerTest {
 
     private final WindowDeviceRepository windowDeviceRepository = mock(WindowDeviceRepository.class);
